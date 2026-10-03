@@ -1,32 +1,37 @@
 import { Bookmark, Check, Flame, Sparkles } from "lucide-react";
 
+import { useLanguage } from "../context/LanguageContext.jsx";
 import MacroBar from "./MacroBar.jsx";
+import MealPicker from "./MealPicker.jsx";
 import useCountUp from "../hooks/useCountUp.js";
 
 const MACRO_PILLS = [
-  { key: "protein", label: "Protein", color: "#3b82f6" }, // blue
-  { key: "carbs", label: "Carbs", color: "#f97316" },     // orange
-  { key: "fat", label: "Fat", color: "#eab308" },         // yellow
-  { key: "fiber", label: "Fiber", color: "var(--text-secondary)" },     // gray
+  { key: "protein", labelKey: "nutrition.protein", color: "#3b82f6" },
+  { key: "carbs", labelKey: "nutrition.carbs", color: "#f97316" },
+  { key: "fat", labelKey: "nutrition.fat", color: "#eab308" },
+  { key: "fiber", labelKey: "nutrition.fiber", color: "var(--text-secondary)" },
 ];
 
 function MacroPill({ label, color, grams }) {
+  const { t } = useLanguage();
   const animated = useCountUp(grams, 800);
   const value = Math.round(animated);
   return (
     <div
-      className="flex flex-col gap-0.5 rounded-xl border border-[var(--border)] bg-black/[0.03] px-3 py-2"
-      style={{ boxShadow: `inset 3px 0 0 ${color}` }}
+      className="flex min-w-0 flex-col gap-0.5 rounded-xl border border-[var(--border)] bg-black/[0.03] px-3 py-2 dark:bg-white/[0.05]"
+      style={{ borderInlineStart: `3px solid ${color}` }}
     >
       <span
-        className="text-[10px] font-semibold uppercase tracking-wider"
+        className="break-words text-[10px] font-semibold uppercase tracking-wider rtl:normal-case rtl:tracking-normal"
         style={{ color }}
       >
         {label}
       </span>
-      <span className="text-base font-semibold text-[var(--text-primary)] tabular-nums">
+      <span className="text-base font-semibold tabular-nums text-[var(--text-primary)]">
         {value}
-        <span className="ml-0.5 text-xs font-normal text-[var(--text-secondary)]">g</span>
+        <span className="ms-0.5 text-xs font-normal text-[var(--text-secondary)]">
+          {t("common.grams")}
+        </span>
       </span>
     </div>
   );
@@ -45,16 +50,19 @@ export default function FoodCard({
   aiNote,
   onSave,
   isSaved = false,
+  meal,
+  onMealChange,
   thumbnailSrc,
   thumbnailAlt,
 }) {
+  const { t } = useLanguage();
   const animatedCalories = useCountUp(calories, 800);
   const macroGrams = { protein, carbs, fat, fiber };
 
   return (
     <article
-      aria-label={`Nutrition for ${foodName}`}
-      className="fade-in-up rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 backdrop-blur-md shadow-[0_8px_30px_rgba(0,0,0,0.25)] sm:p-6"
+      aria-label={t("nutrition.cardLabel", { food: foodName || "" })}
+      className="fade-in-up rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 backdrop-blur-md shadow-[0_8px_30px_rgba(0,0,0,0.25)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.55)] sm:p-6"
     >
       <header className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -83,15 +91,15 @@ export default function FoodCard({
           <span className="text-2xl font-bold text-[var(--text-primary)] tabular-nums sm:text-[28px]">
             {Math.round(animatedCalories)}
           </span>
-          <span className="text-xs font-medium text-[var(--text-secondary)]">kcal</span>
+          <span className="text-xs font-medium text-[var(--text-secondary)]">{t("history.kcal")}</span>
         </div>
       </header>
 
       <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-        {MACRO_PILLS.map(({ key, label, color }) => (
+        {MACRO_PILLS.map(({ key, labelKey, color }) => (
           <MacroPill
             key={key}
-            label={label}
+            label={t(labelKey)}
             color={color}
             grams={macroGrams[key]}
           />
@@ -103,7 +111,7 @@ export default function FoodCard({
       </div>
 
       {aiNote ? (
-        <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-[var(--border)] bg-black/[0.03] p-3.5">
+        <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-[var(--border)] bg-black/[0.03] dark:bg-white/[0.05] p-3.5">
           <Sparkles
             className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-green)]"
             aria-hidden="true"
@@ -115,7 +123,11 @@ export default function FoodCard({
       ) : null}
 
       {onSave ? (
-        <div className="mt-5">
+        <div className="mt-5 flex flex-col gap-3">
+          {onMealChange ? (
+            <MealPicker value={meal} onChange={onMealChange} disabled={isSaved} />
+          ) : null}
+          <div>
           <button
             type="button"
             onClick={onSave}
@@ -125,7 +137,7 @@ export default function FoodCard({
               "btn-press inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-200 sm:w-auto",
               isSaved
                 ? "cursor-default border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/15 text-[var(--accent-green)]"
-                : "bg-[var(--accent-green)] text-[var(--bg-primary)] hover:bg-[var(--accent-green)]/90 active:bg-[var(--accent-green)]/80",
+                : "bg-[var(--accent-green)] text-[var(--on-accent)] dark:text-[#f0f6fc] hover:bg-[var(--accent-green)]/90 active:bg-[var(--accent-green)]/80",
             ].join(" ")}
           >
             {isSaved ? (
@@ -133,8 +145,9 @@ export default function FoodCard({
             ) : (
               <Bookmark className="h-4 w-4" aria-hidden="true" />
             )}
-            <span>{isSaved ? "Saved" : "Save to Log"}</span>
+            <span>{isSaved ? t("common.saved") : t("common.saveToLog")}</span>
           </button>
+          </div>
         </div>
       ) : null}
     </article>

@@ -1,20 +1,19 @@
-// Horizontal macro split bar with a small legend underneath.
-// Segment widths are proportional to grams; the bar gracefully renders
-// an empty track when all macros are zero or unknown.
+import { useLanguage } from "../context/LanguageContext.jsx";
 
 const COLORS = {
-  protein: "#3b82f6", // accent-blue
-  carbs: "#f97316",   // accent-orange
-  fat: "#eab308",     // accent-yellow
+  protein: "#3b82f6",
+  carbs: "#f97316",
+  fat: "#eab308",
 };
 
-const LABELS = {
-  protein: "Protein",
-  carbs: "Carbs",
-  fat: "Fat",
+const LABEL_KEYS = {
+  protein: "nutrition.protein",
+  carbs: "nutrition.carbs",
+  fat: "nutrition.fat",
 };
 
-export default function MacroBar({ protein = 0, carbs = 0, fat = 0 }) {
+export default function MacroBar({ protein = 0, carbs = 0, fat = 0, compact = false }) {
+  const { t } = useLanguage();
   const p = Math.max(0, Number(protein) || 0);
   const c = Math.max(0, Number(carbs) || 0);
   const f = Math.max(0, Number(fat) || 0);
@@ -29,9 +28,16 @@ export default function MacroBar({ protein = 0, carbs = 0, fat = 0 }) {
   return (
     <div className="w-full">
       <div
-        className="flex h-3 w-full overflow-hidden rounded-full bg-black/[0.06]"
+        className={[
+          "flex w-full overflow-hidden rounded-full bg-black/[0.06] dark:bg-white/[0.08]",
+          compact ? "h-1.5" : "h-3",
+        ].join(" ")}
         role="img"
-        aria-label={`Macro split: ${Math.round(p)}g protein, ${Math.round(c)}g carbs, ${Math.round(f)}g fat`}
+        aria-label={t("nutrition.macroSplit", {
+          protein: Math.round(p),
+          carbs: Math.round(c),
+          fat: Math.round(f),
+        })}
       >
         {total === 0
           ? null
@@ -46,21 +52,23 @@ export default function MacroBar({ protein = 0, carbs = 0, fat = 0 }) {
             )}
       </div>
 
+      {compact ? null : (
       <ul className="mt-3 grid grid-cols-3 gap-2 text-xs">
         {segments.map(({ key, value }) => (
-          <li key={key} className="flex items-center gap-2 min-w-0">
+          <li key={key} className="flex min-w-0 items-center gap-2">
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-full"
               style={{ backgroundColor: COLORS[key] }}
               aria-hidden="true"
             />
-            <span className="truncate text-[var(--text-secondary)]">{LABELS[key]}</span>
-            <span className="ml-auto font-medium text-[var(--text-primary)] tabular-nums">
-              {Math.round(value)}g
+            <span className="truncate text-[var(--text-secondary)]">{t(LABEL_KEYS[key])}</span>
+            <span className="ms-auto font-medium tabular-nums text-[var(--text-primary)]">
+              {Math.round(value)} {t("common.grams")}
             </span>
           </li>
         ))}
       </ul>
+      )}
     </div>
   );
 }

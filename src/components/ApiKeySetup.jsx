@@ -1,5 +1,7 @@
 import { ExternalLink, KeyRound, Leaf, Terminal } from "lucide-react";
 
+import { useLanguage } from "../context/LanguageContext.jsx";
+
 const ENV_FILE_SNIPPET = `# .env  (project root)
 VITE_OPENAI_API_KEY=sk-...your-key-here...`;
 
@@ -9,7 +11,7 @@ npm run dev`;
 
 function CodeBlock({ children, label }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-black/40 text-left">
+    <div dir="ltr" className="overflow-hidden rounded-xl border border-[var(--border)] bg-black/40 text-left">
       {label ? (
         <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
           <Terminal className="h-3 w-3" aria-hidden="true" />
@@ -29,6 +31,8 @@ function CodeBlock({ children, label }) {
  * instead of broken AI features.
  */
 export default function ApiKeySetup() {
+  const { t } = useLanguage();
+
   return (
     <div className="relative min-h-dvh bg-[var(--bg-primary)] text-[var(--text-primary)]">
       <div
@@ -49,16 +53,16 @@ export default function ApiKeySetup() {
             />
           </span>
           <div className="leading-tight">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]">
-              AI Coach
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)] rtl:normal-case rtl:tracking-normal">
+              {t("app.tagline")}
             </p>
             <p className="font-sans text-[15px] font-bold text-[var(--text-primary)]">
-              AI Dietary Coach
+              {t("app.name")}
             </p>
           </div>
         </header>
 
-        <section className="fade-in-up mt-10 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 backdrop-blur-md shadow-[0_8px_30px_rgba(0,0,0,0.25)] sm:p-8">
+        <section className="fade-in-up mt-10 rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-6 backdrop-blur-md shadow-[0_8px_30px_rgba(0,0,0,0.25)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.55)] sm:p-8">
           <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--accent-green)]/10 ring-1 ring-[var(--accent-green)]/30">
             <KeyRound
               className="h-6 w-6 text-[var(--accent-green)]"
@@ -68,13 +72,10 @@ export default function ApiKeySetup() {
           </span>
 
           <h1 className="mt-5 text-2xl font-bold text-[var(--text-primary)] sm:text-[28px]">
-            Set up your OpenAI API key
+            {t("setup.title")}
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)] sm:text-base">
-            AI Dietary Coach uses the OpenAI API for nutrition analysis, photo
-            scanning, BMI advice, and chat with Coach Nova. To get started,
-            add your personal API key to a local <code className="font-mono">.env</code>{" "}
-            file.
+            {t("setup.intro")}
           </p>
 
           <ol className="mt-6 space-y-4 text-sm text-[var(--text-primary)]">
@@ -83,18 +84,18 @@ export default function ApiKeySetup() {
                 1
               </span>
               <div className="flex-1">
-                <p className="font-semibold">Get a key from OpenAI</p>
+                <p className="font-semibold">{t("setup.step1Title")}</p>
                 <p className="mt-0.5 text-[var(--text-secondary)]">
-                  Sign in to your OpenAI account and create a new secret key.
+                  {t("setup.step1Body")}
                 </p>
                 <a
                   href="https://platform.openai.com/api-keys"
                   target="_blank"
                   rel="noreferrer"
-                  className="btn-press mt-2 inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent-green)] px-3 py-1.5 text-xs font-semibold text-[var(--bg-primary)] transition-colors hover:bg-[var(--accent-green)]/90"
+                  className="btn-press mt-2 inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent-green)] px-3 py-1.5 text-xs font-semibold text-[var(--on-accent)] dark:text-[#f0f6fc] transition-colors hover:bg-[var(--accent-green)]/90"
                 >
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                  Open platform.openai.com/api-keys
+                  {t("setup.step1Link")}
                 </a>
               </div>
             </li>
@@ -104,11 +105,8 @@ export default function ApiKeySetup() {
                 2
               </span>
               <div className="flex-1">
-                <p className="font-semibold">
-                  Create <code className="font-mono">.env</code> from the
-                  example
-                </p>
-                <CodeBlock label="terminal">{COMMAND_SNIPPET}</CodeBlock>
+                <p className="font-semibold">{t("setup.step2Title")}</p>
+                <CodeBlock label={t("setup.terminal")}>{COMMAND_SNIPPET}</CodeBlock>
               </div>
             </li>
 
@@ -117,10 +115,9 @@ export default function ApiKeySetup() {
                 3
               </span>
               <div className="flex-1">
-                <p className="font-semibold">Paste your key</p>
+                <p className="font-semibold">{t("setup.step3Title")}</p>
                 <p className="mt-0.5 text-[var(--text-secondary)]">
-                  Open the new <code className="font-mono">.env</code> and
-                  replace the placeholder:
+                  {t("setup.step3Body")}
                 </p>
                 <div className="mt-2">
                   <CodeBlock label=".env">{ENV_FILE_SNIPPET}</CodeBlock>
@@ -133,30 +130,24 @@ export default function ApiKeySetup() {
                 4
               </span>
               <div className="flex-1">
-                <p className="font-semibold">Restart the dev server</p>
+                <p className="font-semibold">{t("setup.step4Title")}</p>
                 <p className="mt-0.5 text-[var(--text-secondary)]">
-                  Vite only reads <code className="font-mono">.env</code> at
-                  startup, so stop and re-run{" "}
-                  <code className="font-mono">npm run dev</code> to pick up the
-                  new key.
+                  {t("setup.step4Body")}
                 </p>
               </div>
             </li>
           </ol>
 
-          <div className="mt-6 rounded-xl border border-[var(--border)] bg-black/[0.03] p-3.5 text-xs text-[var(--text-secondary)]">
+          <div className="mt-6 rounded-xl border border-[var(--border)] bg-black/[0.03] dark:bg-white/[0.05] p-3.5 text-xs text-[var(--text-secondary)]">
             <p>
-              <span className="font-semibold text-[var(--text-primary)]">Heads up:</span>{" "}
-              this app calls OpenAI directly from the browser, which means the
-              key is bundled into the client. It's perfect for personal use
-              and demos — for production, proxy requests through a server you
-              control.
+              <span className="font-semibold text-[var(--text-primary)]">{t("setup.headsUp")}</span>{" "}
+              {t("setup.headsUpBody")}
             </p>
           </div>
         </section>
 
         <p className="mt-8 text-center text-xs text-[var(--text-secondary)]">
-          Once your key is in place, refresh this page to start coaching.
+          {t("setup.footer")}
         </p>
       </main>
     </div>

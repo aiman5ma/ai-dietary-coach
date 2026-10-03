@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { AlertCircle, CheckCircle, Info, X } from "lucide-react";
 
+import { useLanguage } from "../context/LanguageContext.jsx";
+
 const VARIANTS = {
   success: {
     Icon: CheckCircle,
@@ -42,6 +44,7 @@ export default function Toast({
     return () => clearTimeout(id);
   }, [visible, duration, onDismiss]);
 
+  const { t } = useLanguage();
   const variant = VARIANTS[type] || VARIANTS.info;
   const Icon = variant.Icon;
 
@@ -60,7 +63,7 @@ export default function Toast({
     >
       <div
         className={[
-          "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-md",
+          "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-[0_8px_30px_rgba(0,0,0,0.35)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-md",
           variant.bubble,
         ].join(" ")}
       >
@@ -73,8 +76,8 @@ export default function Toast({
           <button
             type="button"
             onClick={() => onDismiss?.()}
-            aria-label="Dismiss"
-            className="ml-1 grid h-5 w-5 place-items-center rounded-full text-current/70 transition-colors hover:bg-black/[0.06] hover:text-current"
+            aria-label={t("common.dismiss")}
+            className="ms-1 grid h-5 w-5 place-items-center rounded-full text-current/70 transition-colors hover:bg-black/[0.06] hover:text-current dark:hover:bg-white/10"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>

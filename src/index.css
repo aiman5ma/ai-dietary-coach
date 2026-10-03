@@ -1,4 +1,10 @@
 @import "tailwindcss";
+@config "../tailwind.config.js";
+
+/* Selector strategy: `dark:` follows a class on <html>, `rtl:` / `ltr:` follow dir. */
+@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant rtl (&:where([dir="rtl"], [dir="rtl"] *));
+@custom-variant ltr (&:where([dir="ltr"], [dir="ltr"] *));
 
 :root {
   --bg-primary: #f8faf8;
@@ -12,15 +18,41 @@
 
   --text-primary: #1a2e1a;
   --text-secondary: #4a6741;
+  --on-accent: #f8faf8;
 
   --border: rgba(45, 158, 95, 0.15);
+  --gauge-track: rgba(0, 0, 0, 0.08);
+  --dot: rgba(0, 0, 0, 0.05);
 
   color-scheme: light;
 }
 
+.dark select option {
+  background-color: #161b22;
+  color: #f0f6fc;
+}
+
+.dark {
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-card: rgba(22, 27, 34, 0.95);
+
+  --accent-green: #2d9e5f;
+
+  --text-primary: #f0f6fc;
+  --text-secondary: #8b949e;
+  --on-accent: #f0f6fc;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --gauge-track: rgba(255, 255, 255, 0.16);
+  --dot: rgba(255, 255, 255, 0.07);
+
+  color-scheme: dark;
+}
+
 @theme {
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", "Noto Sans Arabic", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "DM Sans", "Noto Sans Arabic", ui-sans-serif, system-ui, sans-serif;
 
   --color-bg-primary: #f8faf8;
   --color-bg-secondary: #edf4ed;
@@ -74,7 +106,7 @@ body {
   min-height: 100dvh;
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-family: "Plus Jakarta Sans", "Noto Sans Arabic", ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -86,12 +118,21 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-family: "Plus Jakarta Sans", "Noto Sans Arabic", ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.01em;
 }
 
+html[dir="rtl"] h1,
+html[dir="rtl"] h2,
+html[dir="rtl"] h3,
+html[dir="rtl"] h4,
+html[dir="rtl"] h5,
+html[dir="rtl"] h6 {
+  letter-spacing: 0;
+}
+
 p, span, label, button, input, textarea, select {
-  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  font-family: "DM Sans", "Noto Sans Arabic", ui-sans-serif, system-ui, sans-serif;
 }
 
 input,

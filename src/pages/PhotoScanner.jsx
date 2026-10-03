@@ -13,18 +13,31 @@ import {
 
 import FoodCard from "../components/FoodCard.jsx";
 import FoodCardSkeleton from "../components/FoodCardSkeleton.jsx";
+import { mealForNow } from "../utils/meals.js";
 import Toast from "../components/Toast.jsx";
 import { analyzePhoto } from "../api/openai.js";
 import { useHistory } from "../context/historyContext.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 import { generateId } from "../utils/bmi.js";
+import { addDailyFood } from "../utils/dailyLog.js";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
+function withTimestamp(fields) {
+  return { ...fields, date: Date.now() };
+}
+
 const EXAMPLES = [
-  { emoji: "🍕", label: "Restaurant meals" },
-  { emoji: "📦", label: "Packaged products" },
-  { emoji: "🥗", label: "Home-cooked food" },
+  { emoji: "🍕", labelKey: "scanner.exampleRestaurant" },
+  { emoji: "📦", labelKey: "scanner.examplePackaged" },
+  { emoji: "🥗", labelKey: "scanner.exampleHome" },
 ];
+
+function readError(key) {
+  const err = new Error(key);
+  err.i18nKey = key;
+  return err;
+}
 
 /**
  * Read a File as a base64-encoded string.
@@ -33,7 +46,7 @@ const EXAMPLES = [
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
     if (!(file instanceof Blob)) {
-      reject(new Error("Expected a File or Blob."));
+      reject(readError("scanner.expectedFile"));
       return;
     }
     const reader = new FileReader();
@@ -41,13 +54,13 @@ function readFileAsBase64(file) {
       const raw = String(reader.result || "");
       const match = /^data:([^;,]+);base64,(.*)$/.exec(raw);
       if (!match) {
-        reject(new Error("Could not encode image as base64."));
+        reject(readError("scanner.encodeFailed"));
         return;
       }
       resolve({ base64: match[2], mimeType: match[1] });
     };
     reader.onerror = () =>
-      reject(new Error("Could not read the image file."));
+      reject(readError("scanner.readFileFailed"));
     reader.readAsDataURL(file);
   });
 }
@@ -59,12 +72,20 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function errorText(error, t) {
+  if (!error) return "";
+  if (error.key) return t(error.key, error.vars);
+  return error.message || "";
+}
+
 export default function PhotoScanner() {
+  const { t, lang } = useLanguage();
   const [photo, setPhoto] = useState(null); // { base64, mimeType, dataUri, name, size }
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [meal, setMeal] = useState("lunch");
   const [isDragging, setIsDragging] = useState(false);
 
   const [toast, setToast] = useState({
@@ -107,19 +128,19 @@ export default function PhotoScanner() {
   async function selectFile(file) {
     if (!file) return;
     if (!file.type?.startsWith("image/")) {
-      const msg = "That doesn't look like an image. Please choose a photo.";
-      setError(msg);
-      showToast(msg, "error");
+      const next = { key: "scanner.notImage" };
+      setError(next);
+      showToast(t(next.key), "error");
       return;
     }
     if (file.size > MAX_BYTES) {
-      const msg = `That image is ${formatFileSize(file.size)} — please choose one under 5 MB.`;
-      setError(msg);
-      showToast(msg, "error");
+      const next = { key: "scanner.tooLarge", vars: { size: formatFileSize(file.size) } };
+      setError(next);
+      showToast(t(next.key, next.vars), "error");
       return;
     }
 
-    setError("");
+    setError(null);
     setResult(null);
     setIsSaved(false);
 
@@ -133,7 +154,8 @@ export default function PhotoScanner() {
         size: file.size,
       });
     } catch (err) {
-      setError(err?.message || "Could not read that image.");
+      const key = err?.i18nKey || "scanner.readFailed";
+      setError({ key });
     }
   }
 
@@ -165,7 +187,7 @@ export default function PhotoScanner() {
   function clearPhoto() {
     setPhoto(null);
     setResult(null);
-    setError("");
+    setError(null);
     setIsSaved(false);
   }
 
@@ -176,14 +198,15 @@ export default function PhotoScanner() {
     abortRef.current = controller;
 
     setLoading(true);
-    setError("");
+    setError(null);
     setResult(null);
     setIsSaved(false);
 
     try {
-      const data = await analyzePhoto(photo.base64, photo.mimeType, {
+      const data = await analyzePhoto(photo.base64, photo.mimeType, lang, {
         signal: controller.signal,
       });
+      setMeal(mealForNow());
       setResult({
         id: generateId(),
         photoDataUri: photo.dataUri,
@@ -192,10 +215,11 @@ export default function PhotoScanner() {
       });
     } catch (err) {
       if (err?.name === "AbortError") return;
-      const msg =
-        err?.message || "Could not scan that photo. Please try again.";
-      setError(msg);
-      showToast(msg, "error");
+      const next = err?.message
+        ? { message: err.message }
+        : { key: "scanner.scanFailed" };
+      setError(next);
+      showToast(errorText(next, t), "error");
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setLoading(false);
@@ -204,11 +228,11 @@ export default function PhotoScanner() {
 
   function handleSave() {
     if (!result || isSaved) return;
-    const entry = {
+    const entry = withTimestamp({
       id: result.id,
       type: "photo",
       foodName: result.foodName,
-      weight: "1 serving",
+      weight: t("scanner.serving"),
       calories: Number(result.calories) || 0,
       protein: Number(result.protein) || 0,
       carbs: Number(result.carbs) || 0,
@@ -216,24 +240,36 @@ export default function PhotoScanner() {
       fiber: Number(result.fiber) || 0,
       sugar: Number(result.sugar) || 0,
       note: result.description || "",
-      date: Date.now(),
-    };
+    });
     addFoodEntry(entry);
+    addDailyFood({
+      id: entry.id,
+      timestamp: entry.date,
+      foodName: entry.foodName,
+      calories: entry.calories,
+      protein: entry.protein,
+      carbs: entry.carbs,
+      fat: entry.fat,
+      fiber: entry.fiber,
+      sugar: entry.sugar,
+      source: "scanner",
+      meal,
+    });
     setIsSaved(true);
-    showToast("Saved to your food log", "success");
+    showToast(t("scanner.savedToast"), "success");
   }
 
   return (
-    <div className="relative">
+    <div className="relative text-start">
       <header className="mb-6 sm:mb-8">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--accent-green)]">
-          Vision
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--accent-green)] rtl:normal-case rtl:tracking-normal">
+          {t("scanner.eyebrow")}
         </p>
         <h1 className="mt-1 text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">
-          Food Scanner
+          {t("scanner.title")}
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)] sm:text-base">
-          Snap a photo — AI identifies it and gives full nutrition info.
+          {t("scanner.subtitle")}
         </p>
       </header>
 
@@ -269,7 +305,7 @@ export default function PhotoScanner() {
             <div className="overflow-hidden rounded-xl bg-black/40 ring-1 ring-[var(--border)]">
               <img
                 src={photo.dataUri}
-                alt={photo.name || "Selected food"}
+                alt={photo.name || t("scanner.selectedAlt")}
                 className="aspect-[4/3] w-full object-cover"
               />
             </div>
@@ -283,17 +319,17 @@ export default function PhotoScanner() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="btn-press inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-black/[0.04]"
+                  className="btn-press inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.08]"
                 >
                   <Replace className="h-3.5 w-3.5" aria-hidden="true" />
-                  Change Photo
+                  {t("scanner.changePhoto")}
                 </button>
                 <button
                   type="button"
                   onClick={clearPhoto}
-                  className="btn-press inline-flex items-center rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04] hover:text-[var(--text-primary)]"
+                  className="btn-press inline-flex items-center rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04] hover:text-[var(--text-primary)] dark:hover:bg-white/[0.08]"
                 >
-                  Remove
+                  {t("scanner.remove")}
                 </button>
               </div>
             </div>
@@ -302,7 +338,7 @@ export default function PhotoScanner() {
               type="button"
               onClick={runScan}
               disabled={loading}
-              className="btn-press inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-green)] px-5 py-3 text-sm font-bold uppercase tracking-wide text-[var(--bg-primary)] transition-colors hover:bg-[var(--accent-green)]/90 active:bg-[var(--accent-green)]/80 disabled:cursor-not-allowed disabled:opacity-70"
+              className="btn-press inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-green)] px-5 py-3 text-sm font-bold uppercase tracking-wide text-[var(--on-accent)] transition-colors hover:bg-[var(--accent-green)]/90 active:bg-[var(--accent-green)]/80 disabled:cursor-not-allowed disabled:opacity-70 rtl:normal-case rtl:tracking-normal dark:text-[#f0f6fc]"
             >
               {loading ? (
                 <>
@@ -310,12 +346,12 @@ export default function PhotoScanner() {
                     className="h-4 w-4 animate-spin"
                     aria-hidden="true"
                   />
-                  AI is analyzing your food...
+                  {t("scanner.analyzing")}
                 </>
               ) : (
                 <>
                   <Sparkles className="h-4 w-4" aria-hidden="true" />
-                  Scan Food
+                  {t("scanner.scan")}
                 </>
               )}
             </button>
@@ -332,10 +368,10 @@ export default function PhotoScanner() {
 
             <div>
               <p className="text-base font-semibold text-[var(--text-primary)] sm:text-lg">
-                Drop a photo here
+                {t("scanner.dropTitle")}
               </p>
               <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
-                or pick one from your device — PNG or JPG, up to 5 MB.
+                {t("scanner.dropHint")}
               </p>
             </div>
 
@@ -343,34 +379,33 @@ export default function PhotoScanner() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="btn-press inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--accent-green)] px-4 py-2.5 text-sm font-semibold text-[var(--bg-primary)] transition-colors hover:bg-[var(--accent-green)]/90 active:bg-[var(--accent-green)]/80"
+                className="btn-press inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--accent-green)] px-4 py-2.5 text-sm font-semibold text-[var(--on-accent)] dark:text-[#f0f6fc] transition-colors hover:bg-[var(--accent-green)]/90 active:bg-[var(--accent-green)]/80"
               >
                 <Upload className="h-4 w-4" aria-hidden="true" />
-                Choose Photo
+                {t("scanner.choosePhoto")}
               </button>
               <button
                 type="button"
                 onClick={() => cameraInputRef.current?.click()}
-                className="btn-press inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-black/[0.04] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-black/[0.04] md:hidden"
+                className="btn-press inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-black/[0.04] dark:bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.08] md:hidden"
               >
                 <Camera className="h-4 w-4" aria-hidden="true" />
-                Take Photo
+                {t("scanner.takePhoto")}
               </button>
             </div>
 
             <p className="max-w-md text-xs text-[var(--text-secondary)]">
-              Works best with clear photos of single food items or packaged
-              products.
+              {t("scanner.bestResults")}
             </p>
 
             <div className="flex flex-wrap justify-center gap-2">
-              {EXAMPLES.map(({ emoji, label }) => (
+              {EXAMPLES.map(({ emoji, labelKey }) => (
                 <span
-                  key={label}
+                  key={labelKey}
                   className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] backdrop-blur-md"
                 >
                   <span aria-hidden="true">{emoji}</span>
-                  <span>{label}</span>
+                  <span>{t(labelKey)}</span>
                 </span>
               ))}
             </div>
@@ -388,8 +423,8 @@ export default function PhotoScanner() {
             aria-hidden="true"
           />
           <div className="min-w-0 flex-1">
-            <p className="font-semibold text-red-300">Couldn't process that photo</p>
-            <p className="mt-0.5 break-words text-red-200/80">{error}</p>
+            <p className="font-semibold text-red-300">{t("scanner.errorTitle")}</p>
+            <p className="mt-0.5 break-words text-red-200/80">{errorText(error, t)}</p>
             {photo ? (
               <button
                 type="button"
@@ -397,7 +432,7 @@ export default function PhotoScanner() {
                 className="btn-press mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-200 transition-colors hover:bg-red-500/10"
               >
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                Try again
+                {t("common.tryAgain")}
               </button>
             ) : null}
           </div>
@@ -412,7 +447,7 @@ export default function PhotoScanner() {
                 className="h-5 w-5 animate-pulse text-[var(--accent-green)]"
                 aria-hidden="true"
               />
-              <span>Identifying food and estimating nutrition…</span>
+              <span>{t("scanner.identifying")}</span>
             </div>
             <FoodCardSkeleton withThumbnail />
           </section>
@@ -423,7 +458,7 @@ export default function PhotoScanner() {
             <FoodCard
               key={result.id}
               foodName={result.foodName}
-              weight="1 serving"
+              weight={t("scanner.serving")}
               calories={result.calories}
               protein={result.protein}
               carbs={result.carbs}
@@ -433,6 +468,8 @@ export default function PhotoScanner() {
               aiNote={result.description}
               onSave={handleSave}
               isSaved={isSaved}
+              meal={meal}
+              onMealChange={setMeal}
               thumbnailSrc={result.photoDataUri}
               thumbnailAlt={result.foodName}
             />
@@ -441,15 +478,12 @@ export default function PhotoScanner() {
       </div>
 
       {!photo && !loading && !result ? (
-        <section className="mt-6 flex items-start gap-3 rounded-2xl border border-[var(--border)] bg-black/[0.03] p-4 text-sm text-[var(--text-secondary)]">
+        <section className="mt-6 flex items-start gap-3 rounded-2xl border border-[var(--border)] bg-black/[0.03] dark:bg-white/[0.05] p-4 text-sm text-[var(--text-secondary)]">
           <ImageUp
             className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent-green)]/80"
             aria-hidden="true"
           />
-          <p>
-            Tip: photos taken in good lighting with the food centered get the
-            most accurate calorie and macro estimates.
-          </p>
+          <p>{t("scanner.tip")}</p>
         </section>
       ) : null}
 

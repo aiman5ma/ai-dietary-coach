@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { useLanguage } from "../context/LanguageContext.jsx";
+
 // SVG geometry. The arc is drawn as a semicircle in the upper half of
 // the viewBox, with the needle pivoting at (CX, CY).
 const VIEW_W = 220;
@@ -46,7 +48,13 @@ function arcPath(startAngle, endAngle, r = R) {
   return `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
 }
 
-export default function BMIGauge({ bmi, category, color = "var(--accent-green)" }) {
+export default function BMIGauge({
+  bmi,
+  category,
+  color = "var(--accent-green)",
+  label,
+}) {
+  const { t } = useLanguage();
   const numericBmi = Number(bmi);
   const hasBmi = Number.isFinite(numericBmi);
   const targetBmi = hasBmi ? numericBmi : MIN_BMI;
@@ -72,12 +80,12 @@ export default function BMIGauge({ bmi, category, color = "var(--accent-green)" 
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
         className="w-full max-w-[320px]"
         role="img"
-        aria-label={`BMI gauge showing ${displayBmi}${category ? `, ${category}` : ""}`}
+        aria-label={label || t("bmi.gaugeLabel", { bmi: displayBmi })}
       >
         <path
           d={arcPath(180, 0)}
           fill="none"
-          stroke="rgba(0,0,0,0.08)"
+          stroke="var(--gauge-track)"
           strokeWidth={STROKE}
           strokeLinecap="round"
         />
@@ -148,7 +156,7 @@ export default function BMIGauge({ bmi, category, color = "var(--accent-green)" 
         </span>
         {category ? (
           <span
-            className="mt-1 text-xs font-semibold uppercase tracking-[0.18em]"
+            className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] rtl:normal-case rtl:tracking-normal"
             style={{ color }}
           >
             {category}

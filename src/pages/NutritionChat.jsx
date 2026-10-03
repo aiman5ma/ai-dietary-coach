@@ -9,13 +9,14 @@ import {
 
 import ChatMessage from "../components/ChatMessage.jsx";
 import { chatWithNutritionist } from "../api/openai.js";
+import { useLanguage } from "../context/LanguageContext.jsx";
 import { generateId } from "../utils/bmi.js";
 
-const SUGGESTIONS = [
-  "What's the best protein source for muscle gain?",
-  "How many calories should I eat to lose weight?",
-  "Is intermittent fasting effective?",
-  "What foods are high in fiber?",
+const SUGGESTION_KEYS = [
+  "chat.suggestionProtein",
+  "chat.suggestionCalories",
+  "chat.suggestionFasting",
+  "chat.suggestionFiber",
 ];
 
 const MAX_TEXTAREA_PX = 120; // ~ 4 rows at 24px line-height + padding.
@@ -23,7 +24,7 @@ const MAX_TEXTAREA_PX = 120; // ~ 4 rows at 24px line-height + padding.
 // Subtle dotted background for the messages area.
 const DOT_PATTERN_STYLE = {
   backgroundImage:
-    "radial-gradient(rgba(0,0,0,0.05) 1px, transparent 1px)",
+    "radial-gradient(var(--dot) 1px, transparent 1px)",
   backgroundSize: "22px 22px",
 };
 
@@ -34,24 +35,25 @@ function CoachAvatar({ size = "md" }) {
     size === "sm" ? "h-4 w-4" : size === "lg" ? "h-7 w-7" : "h-5 w-5";
   return (
     <span
-      className={`${dim} relative grid shrink-0 place-items-center rounded-full bg-gradient-to-br from-[var(--accent-green)] to-[#16a34a] shadow-[0_4px_18px_rgba(34,197,94,0.35)]`}
+      className={`${dim} relative grid shrink-0 place-items-center rounded-full bg-gradient-to-br from-[var(--accent-green)] to-[#16a34a] shadow-[0_4px_18px_rgba(34,197,94,0.35)] dark:shadow-[0_4px_18px_rgba(0,0,0,0.45)]`}
     >
-      <Bot className={`${icon} text-[var(--bg-primary)]`} aria-hidden="true" />
+      <Bot className={`${icon} text-[var(--on-accent)] dark:text-[#f0f6fc]`} aria-hidden="true" />
     </span>
   );
 }
 
 function TypingIndicator() {
+  const { t } = useLanguage();
   return (
     <div className="flex w-full justify-start">
       <div className="flex max-w-[85%] flex-col items-start gap-1 sm:max-w-[75%]">
-        <div className="flex items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]">
+        <div className="flex items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)] rtl:normal-case rtl:tracking-normal">
           <span className="grid h-5 w-5 place-items-center rounded-full bg-[var(--accent-green)]/15 ring-1 ring-[var(--accent-green)]/30">
             <Bot className="h-3 w-3 text-[var(--accent-green)]" aria-hidden="true" />
           </span>
-          <span>Coach Nova</span>
+          <span>{t("chat.name")}</span>
         </div>
-        <div className="rounded-2xl rounded-tl-md border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3 backdrop-blur-md">
+        <div className="rounded-2xl rounded-ss-md border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3 backdrop-blur-md">
           <div className="flex items-center gap-1.5">
             <span
               className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--accent-green)]"
@@ -73,6 +75,7 @@ function TypingIndicator() {
 }
 
 function SystemError({ content, onRetry }) {
+  const { t } = useLanguage();
   return (
     <div className="flex w-full justify-center">
       <div className="flex max-w-md items-start gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-xs text-red-200/90">
@@ -89,7 +92,7 @@ function SystemError({ content, onRetry }) {
               className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-red-500/30 px-2 py-0.5 font-medium text-red-200 transition-colors hover:bg-red-500/10"
             >
               <RotateCcw className="h-3 w-3" aria-hidden="true" />
-              Try again
+              {t("common.tryAgain")}
             </button>
           ) : null}
         </div>
@@ -99,40 +102,44 @@ function SystemError({ content, onRetry }) {
 }
 
 function EmptyState({ onSelect, disabled }) {
+  const { t } = useLanguage();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 px-4 py-8 text-center">
       <CoachAvatar size="lg" />
       <div>
         <h2 className="text-xl font-bold text-[var(--text-primary)] sm:text-2xl">
-          Hi! I&apos;m Coach Nova
+          {t("chat.greeting")}
         </h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-[var(--text-secondary)]">
-          Your personal nutrition coach. Ask me anything about food, diets,
-          macros, meal planning, or healthy habits!
+          {t("chat.intro")}
         </p>
       </div>
 
       <div className="grid w-full max-w-xl gap-2 sm:grid-cols-2">
-        {SUGGESTIONS.map((q) => (
-          <button
-            key={q}
-            type="button"
-            onClick={() => onSelect(q)}
-            disabled={disabled}
-            className="btn-press group rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-3.5 py-3 text-left text-sm text-[var(--text-primary)] backdrop-blur-md transition-colors hover:border-[var(--accent-green)]/40 hover:bg-[var(--accent-green)]/10 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <span className="text-[var(--accent-green)] transition-colors group-hover:text-[var(--accent-green)]">
-              →
-            </span>
-            <span className="ml-2">{q}</span>
-          </button>
-        ))}
+        {SUGGESTION_KEYS.map((key) => {
+          const question = t(key);
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onSelect(question)}
+              disabled={disabled}
+              className="btn-press group rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-3.5 py-3 text-start text-sm text-[var(--text-primary)] backdrop-blur-md transition-colors hover:border-[var(--accent-green)]/40 hover:bg-[var(--accent-green)]/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="inline-block text-[var(--accent-green)] rtl:-scale-x-100">
+                →
+              </span>
+              <span className="ms-2">{question}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
 export default function NutritionChat() {
+  const { t, lang } = useLanguage();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -210,7 +217,7 @@ export default function NutritionChat() {
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map(({ role, content }) => ({ role, content }));
 
-      const reply = await chatWithNutritionist(apiMessages, {
+      const reply = await chatWithNutritionist(apiMessages, lang, {
         signal: controller.signal,
       });
 
@@ -230,9 +237,7 @@ export default function NutritionChat() {
         {
           id: generateId(),
           role: "system",
-          content:
-            err?.message ||
-            "I couldn't reach the kitchen just now. Please try again.",
+          content: err?.message || t("chat.unreachable"),
           timestamp: Date.now(),
         },
       ]);
@@ -300,8 +305,8 @@ export default function NutritionChat() {
 
   return (
     <section
-      aria-label="Coach Nova chat"
-      className="flex h-[calc(100dvh-188px)] min-h-[420px] flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] backdrop-blur-md shadow-[0_8px_30px_rgba(0,0,0,0.25)] md:h-[calc(100dvh-136px)]"
+      aria-label={t("chat.region")}
+      className="flex h-[calc(100dvh-252px)] min-h-[420px] flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] backdrop-blur-md shadow-[0_8px_30px_rgba(0,0,0,0.25)] dark:border-[rgba(255,255,255,0.08)] dark:bg-[rgba(22,27,34,0.95)] dark:text-[#f0f6fc] dark:shadow-[0_8px_30px_rgba(0,0,0,0.55)] md:h-[calc(100dvh-136px)]"
     >
       <header className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
@@ -309,41 +314,41 @@ export default function NutritionChat() {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="truncate text-sm font-semibold text-[var(--text-primary)] sm:text-base">
-                Coach Nova
+                {t("chat.name")}
               </h2>
               <span
-                className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-green)]/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[var(--accent-green)]"
-                aria-label="Online"
+                className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-green)]/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[var(--accent-green)] rtl:normal-case rtl:tracking-normal"
+                aria-label={t("chat.online")}
               >
                 <span className="relative grid h-1.5 w-1.5 place-items-center">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent-green)] opacity-60" />
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
                 </span>
-                Online
+                {t("chat.online")}
               </span>
             </div>
-            <p className="truncate text-xs text-[var(--text-secondary)]">AI Nutritionist</p>
+            <p className="truncate text-xs text-[var(--text-secondary)]">{t("chat.role")}</p>
           </div>
         </div>
 
         {confirmingClear ? (
-          <div className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-black/[0.04] px-2 py-1">
+          <div className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-black/[0.04] dark:bg-white/[0.06] px-2 py-1">
             <span className="hidden text-[11px] font-medium text-[var(--text-secondary)] sm:inline">
-              Clear chat?
+              {t("chat.clearPrompt")}
             </span>
             <button
               type="button"
               onClick={cancelClear}
-              className="rounded-md px-2 py-1 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04] hover:text-[var(--text-primary)]"
+              className="rounded-md px-2 py-1 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04] hover:text-[var(--text-primary)] dark:hover:bg-white/[0.08]"
             >
-              Cancel
+              {t("chat.cancel")}
             </button>
             <button
               type="button"
               onClick={confirmClear}
               className="rounded-md bg-red-500/15 px-2 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/25"
             >
-              Yes, clear
+              {t("chat.confirmClear")}
             </button>
           </div>
         ) : (
@@ -351,11 +356,11 @@ export default function NutritionChat() {
             type="button"
             onClick={startClear}
             disabled={messages.length === 0 || loading}
-            className="btn-press inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--text-secondary)]"
-            aria-label="Clear chat"
+            className="btn-press inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.08] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--text-secondary)]"
+            aria-label={t("chat.clear")}
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="hidden sm:inline">Clear chat</span>
+            <span className="hidden sm:inline">{t("chat.clear")}</span>
           </button>
         )}
       </header>
@@ -402,9 +407,9 @@ export default function NutritionChat() {
         className="border-t border-[var(--border)] bg-[var(--bg-card)] px-3 py-3 backdrop-blur-md sm:px-4"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
-        <div className="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-black/[0.04] px-2 py-1.5 focus-within:border-[var(--accent-green)]/50">
+        <div className="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-black/[0.04] dark:bg-white/[0.06] px-2 py-1.5 focus-within:border-[var(--accent-green)]/50">
           <label htmlFor="chat-input" className="sr-only">
-            Message Coach Nova
+            {t("chat.inputLabel")}
           </label>
           <textarea
             id="chat-input"
@@ -413,27 +418,25 @@ export default function NutritionChat() {
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             rows={1}
-            placeholder="Ask Coach Nova anything..."
+            placeholder={t("chat.placeholder")}
             className="max-h-[120px] min-h-[36px] flex-1 resize-none bg-transparent px-2 py-1.5 text-base text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/70 focus:outline-none"
           />
           <button
             type="submit"
             disabled={!canSend}
-            aria-label="Send message"
+            aria-label={t("chat.send")}
             className={[
               "btn-press grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors",
               canSend
-                ? "bg-[var(--accent-green)] text-[var(--bg-primary)] hover:bg-[var(--accent-green)]/90 active:bg-[var(--accent-green)]/80"
-                : "bg-black/[0.04] text-[var(--text-secondary)]",
+                ? "bg-[var(--accent-green)] text-[var(--on-accent)] dark:text-[#f0f6fc] hover:bg-[var(--accent-green)]/90 active:bg-[var(--accent-green)]/80"
+                : "bg-black/[0.04] dark:bg-white/[0.06] text-[var(--text-secondary)]",
             ].join(" ")}
           >
             <Send className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
         <p className="mt-1.5 px-2 text-[10px] text-[var(--text-secondary)]">
-          {lastIsError
-            ? "Press Enter to retry, or edit and send a new question."
-            : "Enter to send · Shift + Enter for a new line"}
+          {lastIsError ? t("chat.retryHint") : t("chat.sendHint")}
         </p>
       </form>
     </section>

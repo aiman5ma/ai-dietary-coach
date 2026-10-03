@@ -22,6 +22,75 @@ export function calculateBMI(heightCm, weightKg) {
   return round1(w / (meters * meters));
 }
 
+// Mifflin-St Jeor activity multipliers, in the order shown on the form.
+export const ACTIVITY_LEVELS = Object.freeze([
+  { id: "sedentary", multiplier: 1.2 },
+  { id: "light", multiplier: 1.375 },
+  { id: "moderate", multiplier: 1.55 },
+  { id: "very", multiplier: 1.725 },
+  { id: "extra", multiplier: 1.9 },
+]);
+
+const ACTIVITY_MULTIPLIER = Object.freeze(
+  Object.fromEntries(ACTIVITY_LEVELS.map((level) => [level.id, level.multiplier])),
+);
+
+/**
+ * Mifflin-St Jeor BMR.
+ * Men:   (10 × kg) + (6.25 × cm) − (5 × age) + 5
+ * Women: (10 × kg) + (6.25 × cm) − (5 × age) − 161
+ * Returns the unrounded kilocalorie value.
+ */
+export function calculateBMR({ weightKg, heightCm, age, sex }) {
+  const kg = Number(weightKg);
+  const cm = Number(heightCm);
+  const years = Number(age);
+  if (!Number.isFinite(kg) || kg <= 0) {
+    throw new Error("weightKg must be a positive number.");
+  }
+  if (!Number.isFinite(cm) || cm <= 0) {
+    throw new Error("heightCm must be a positive number.");
+  }
+  if (!Number.isFinite(years) || years <= 0) {
+    throw new Error("age must be a positive number.");
+  }
+  if (sex !== "male" && sex !== "female") {
+    throw new Error("sex must be male or female.");
+  }
+  const base = 10 * kg + 6.25 * cm - 5 * years;
+  return sex === "male" ? base + 5 : base - 161;
+}
+
+/**
+ * TDEE = BMR × activity multiplier, rounded to the nearest kilocalorie.
+ */
+export function calculateTDEE(bmr, activityLevel) {
+  const multiplier = ACTIVITY_MULTIPLIER[activityLevel];
+  const value = Number(bmr);
+  if (!Number.isFinite(multiplier)) {
+    throw new Error("activityLevel is not recognized.");
+  }
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error("bmr must be a positive number.");
+  }
+  return Math.round(value * multiplier);
+}
+
+/**
+ * Calorie target from TDEE and goal.
+ * Weight loss: TDEE − 500. Maintenance: TDEE. Weight gain: TDEE + 300.
+ */
+export function calorieTargetForGoal(tdee, goal) {
+  const value = Number(tdee);
+  if (!Number.isFinite(value)) {
+    throw new Error("tdee must be a number.");
+  }
+  if (goal === "loss") return value - 500;
+  if (goal === "maintain") return value;
+  if (goal === "gain") return value + 300;
+  throw new Error("goal is not recognized.");
+}
+
 // WHO BMI categories and their accent colors (matches our design tokens
 // where applicable; "Obese" uses Tailwind red-500 since the spec calls
 // for red and we don't have a red brand token).
