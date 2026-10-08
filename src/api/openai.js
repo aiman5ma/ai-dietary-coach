@@ -194,6 +194,18 @@ const SEX_EN = Object.freeze({
   female: "female",
 });
 
+const CONDITION_EN = Object.freeze({
+  diabetes: "Diabetes",
+  hypertension: "Hypertension",
+  cholesterol: "High cholesterol",
+  celiac: "Celiac disease (gluten)",
+  lactose: "Lactose intolerance",
+  nuts: "Nut allergy",
+  seafood: "Seafood allergy",
+  vegetarian: "Vegetarian",
+  vegan: "Vegan",
+});
+
 function requireFinite(value, label) {
   const n = Number(value);
   if (!Number.isFinite(n)) throw new Error(`${label} must be a number.`);
@@ -212,45 +224,115 @@ function asStringList(value) {
     .filter(Boolean);
 }
 
+function cleanPlanText(value) {
+  return String(value ?? "")
+    .replace(/[\u2014\u2013]/g, ", ")
+    .replace(/\s-{2,}\s/g, ", ")
+    .replace(/-{2,}/g, "")
+    .replace(/\s+,/g, ",")
+    .replace(/,\s*,/g, ", ")
+    .trim();
+}
+
+function macroCalories(grams, perGram, given) {
+  const explicit = asRounded(given);
+  if (explicit != null) return explicit;
+  const amount = asRounded(grams);
+  return amount == null ? null : amount * perGram;
+}
+
+function normalizeItem(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const name = cleanPlanText(raw.name);
+  if (!name) return null;
+  return {
+    name,
+    grams: asRounded(raw.grams),
+    calories: asRounded(raw.calories),
+  };
+}
+
+function normalizeOption(raw, index) {
+  if (!raw || typeof raw !== "object") return null;
+  const labels = ["A", "B", "C"];
+  const given = String(raw.id || raw.label || "")
+    .trim()
+    .toUpperCase();
+  const id = labels.includes(given) ? given : labels[index] || "A";
+  let items = Array.isArray(raw.items) ? raw.items.map(normalizeItem).filter(Boolean) : [];
+  const legacyDetail = cleanPlanText(raw.detail);
+  if (!items.length && legacyDetail) {
+    items = [{ name: legacyDetail, grams: null, calories: asRounded(raw.calories) }];
+  }
+  const title = cleanPlanText(raw.title);
+  const preparation = cleanPlanText(raw.preparation);
+  if (!title && !items.length && !preparation) return null;
+  return {
+    id,
+    title,
+    items,
+    totalCalories: asRounded(raw.totalCalories ?? raw.calories),
+    preparation,
+  };
+}
+
+function normalizeMeals(rawMeals) {
+  if (!Array.isArray(rawMeals)) return [];
+  return rawMeals
+    .map((meal) => {
+      if (!meal || typeof meal !== "object") return null;
+      const slot = String(meal.slot || "")
+        .trim()
+        .toLowerCase();
+      const source = Array.isArray(meal.options) && meal.options.length ? meal.options : [meal];
+      const options = source.map(normalizeOption).filter(Boolean).slice(0, 3);
+      if (!options.length) return null;
+      return { slot, options };
+    })
+    .filter(Boolean);
+}
+
 function normalizeDietPlan(raw) {
   if (!raw || typeof raw !== "object") {
     throw new Error("Diet plan response was empty.");
   }
 
-  const meals = Array.isArray(raw.meals)
-    ? raw.meals
-        .map((meal) => {
-          if (!meal || typeof meal !== "object") return null;
-          const slot = String(meal.slot || "")
-            .trim()
-            .toLowerCase();
-          const title = String(meal.title || "").trim();
-          const detail = String(meal.detail || "").trim();
-          const calories = asRounded(meal.calories);
-          if (!title && !detail) return null;
-          return { slot, title, detail, calories };
-        })
-        .filter(Boolean)
-    : [];
+  const meals = normalizeMeals(raw.meals);
+  const proteinGrams = asRounded(raw.proteinGrams);
+  const carbGrams = asRounded(raw.carbGrams);
+  const fatGrams = asRounded(raw.fatGrams);
 
   const plan = {
-    intro: String(raw.intro || "").trim(),
-    proteinGrams: asRounded(raw.proteinGrams),
-    carbGrams: asRounded(raw.carbGrams),
-    fatGrams: asRounded(raw.fatGrams),
-    mealsPerDay: asRounded(raw.mealsPerDay),
+    intro: cleanPlanText(raw.intro),
+    proteinGrams,
+    proteinCalories: macroCalories(proteinGrams, 4, raw.proteinCalories),
+    carbGrams,
+    carbCalories: macroCalories(carbGrams, 4, raw.carbCalories),
+    fatGrams,
+    fatCalories: macroCalories(fatGrams, 9, raw.fatCalories),
+    mealsPerDay: asRounded(raw.mealsPerDay) || (meals.length ? 5 : null),
     meals,
-    prioritize: asStringList(raw.prioritize),
-    limit: asStringList(raw.limit),
-    guidance: asStringList(raw.guidance),
+    eatFreely: asStringList(raw.eatFreely).map(cleanPlanText).filter(Boolean),
+    prioritize: asStringList(raw.prioritize).map(cleanPlanText).filter(Boolean),
+    limit: asStringList(raw.limit).map(cleanPlanText).filter(Boolean),
+    avoid: asStringList(raw.avoid).map(cleanPlanText).filter(Boolean),
+    weeklyTips: asStringList(raw.weeklyTips || raw.guidance).map(cleanPlanText).filter(Boolean),
+    guidance: asStringList(raw.guidance).map(cleanPlanText).filter(Boolean),
+    hydrationMl: asRounded(raw.hydrationMl),
+    hydrationNote: cleanPlanText(raw.hydrationNote),
+    allergyNote: cleanPlanText(raw.allergyNote),
   };
 
   const hasBody =
     plan.intro ||
     plan.meals.length > 0 ||
+    plan.eatFreely.length > 0 ||
     plan.prioritize.length > 0 ||
     plan.limit.length > 0 ||
-    plan.guidance.length > 0;
+    plan.avoid.length > 0 ||
+    plan.weeklyTips.length > 0 ||
+    plan.guidance.length > 0 ||
+    plan.hydrationNote;
   if (!hasBody) throw new Error("Diet plan response was empty.");
   return plan;
 }
@@ -289,8 +371,20 @@ export async function getBMIAdvice(profile, lang = "ar", options = {}) {
   const languageName = normalizeLang(lang) === "en" ? "English" : "Arabic";
   const goalDelta =
     profile.goal === "loss" ? "TDEE − 500" : profile.goal === "gain" ? "TDEE + 300" : "TDEE";
+  const conditionIds = [
+    ...(Array.isArray(profile.conditions) ? profile.conditions : []),
+    ...(Array.isArray(profile.allergies) ? profile.allergies : []),
+  ].filter((id, index, list) => typeof id === "string" && id && list.indexOf(id) === index);
+  const otherConditions =
+    typeof profile.otherConditions === "string" ? profile.otherConditions.trim() : "";
+  const conditionText = [
+    ...conditionIds.map((id) => CONDITION_EN[id] || id),
+    ...(otherConditions ? [`Other: ${otherConditions}`] : []),
+  ];
+  const allergyBlock = conditionText.length ? conditionText.join("; ") : "None reported.";
+  const waterMl = Math.round(weightKg * 35);
 
-  const userPrompt = `Write a detailed diet plan for THIS person only. Use the exact figures below. Do not substitute round numbers or a generic adult template.
+  const userPrompt = `Write a highly detailed diet plan for THIS person only. Use the exact figures below. Do not substitute round numbers or a generic adult template.
 
 Language for every free-text field: ${languageName}.
 Sex: ${sex}
@@ -298,35 +392,79 @@ Age: ${Math.round(age)} years
 Height: ${Math.round(heightCm)} cm
 Weight: ${weightKg} kg
 BMI: ${bmi} (${profile.category})
-Activity level: ${profile.activityLevel} — ${activity}
+Activity level: ${profile.activityLevel}, ${activity}
 BMR (Mifflin-St Jeor): ${Math.round(bmr)} kcal
 TDEE: ${Math.round(tdee)} kcal
 Goal: ${goal}
 Daily calorie target: ${Math.round(calorieTarget)} kcal (${goalDelta})
+Allergies and conditions: ${allergyBlock}
+Suggested water target: ${waterMl} ml per day (35 ml per kg).
 
-Respond with ONLY a JSON object in this exact shape:
+Respond with ONLY a JSON object in this exact shape. Every free-text value must be in ${languageName}:
 {
   "intro": string,
   "proteinGrams": number,
+  "proteinCalories": number,
   "carbGrams": number,
+  "carbCalories": number,
   "fatGrams": number,
-  "mealsPerDay": number,
+  "fatCalories": number,
+  "mealsPerDay": 5,
   "meals": [
-    { "slot": "breakfast" | "lunch" | "dinner" | "snack", "title": string, "detail": string, "calories": number }
+    {
+      "slot": "breakfast" | "morningSnack" | "lunch" | "afternoonSnack" | "dinner",
+      "options": [
+        {
+          "id": "A" | "B" | "C",
+          "title": string,
+          "items": [{ "name": string, "grams": number, "calories": number }],
+          "totalCalories": number,
+          "preparation": string
+        }
+      ]
+    }
   ],
-  "prioritize": [string],
+  "eatFreely": [string],
   "limit": [string],
-  "guidance": [string]
+  "avoid": [string],
+  "weeklyTips": [string],
+  "hydrationMl": number,
+  "hydrationNote": string,
+  "allergyNote": string
 }
 
 Rules:
 - intro is 2–3 sentences addressed to "you". It must state the exact age, sex, activity description, BMI category, goal, TDEE (${Math.round(tdee)}), and calorie target (${Math.round(calorieTarget)}).
-- proteinGrams, carbGrams, and fatGrams are daily gram targets for ${weightKg} kg at ${Math.round(calorieTarget)} kcal. Scale protein to this body weight and goal (higher when losing or gaining). Fat and carbs must fit the calorie target (protein×4 + carbs×4 + fat×9 ≈ ${Math.round(calorieTarget)}).
-- mealsPerDay is 3, 4, or 5, chosen for this goal and activity.
-- meals covers breakfast, lunch, dinner, and at least one snack when mealsPerDay is 4 or 5. Each item names a concrete meal, a short reason it fits this goal, and an approximate calorie count. The meal calories together should land near ${Math.round(calorieTarget)}.
-- slot must stay one of: breakfast, lunch, dinner, snack. title and detail are in ${languageName}.
-- prioritize is 4 foods or food groups to eat more of for this goal. limit is 4 foods or patterns to cut back for this goal. Do not swap the lists between weight loss and weight gain.
-- guidance is exactly 3 short tips, in this order: meal timing, hydration, portion size. Each tip must reference a number from this profile (calorie target, body weight, age, or training frequency).
+- proteinGrams, carbGrams, and fatGrams are daily gram targets for ${weightKg} kg at ${Math.round(calorieTarget)} kcal. Scale protein to this body weight and goal (higher when losing or gaining). proteinCalories = proteinGrams × 4, carbCalories = carbGrams × 4, fatCalories = fatGrams × 9. Those three calorie amounts must add up to about ${Math.round(calorieTarget)}.
+- mealsPerDay is exactly 5. meals has exactly these slots, in order: breakfast, morningSnack, lunch, afternoonSnack, dinner.
+- Each meal has exactly 3 options, id "A", "B", and "C". Options are alternatives, not foods eaten together. One option from each of the 5 meals should land near ${Math.round(calorieTarget)} kcal. Do not add every option together.
+- Each option lists every food in items with an exact grams weight and that item's calories. totalCalories is the sum of that option's item calories. preparation is one sentence on how to prepare it.
+- eatFreely is 4 foods this person can eat freely for this goal. limit is 4 foods to cut back. avoid is 4 foods to avoid completely. Do not swap these lists between weight loss and weight gain.
+- weeklyTips is exactly 3 short tips for varying meals across the week.
+- hydrationMl is ${waterMl}. hydrationNote explains that amount from this body weight in one or two sentences.
+- If allergies and conditions are "None reported.", set allergyNote to an empty string. Otherwise, every meal option must avoid those foods, and allergyNote must name the conditions, the foods to skip, and safe alternatives available in Saudi Arabia.
+
+VARIETY RULES:
+- No ingredient should appear more than once across all 3 options of the same meal.
+- No protein source should repeat across Breakfast, Lunch, and Dinner options on the same day.
+- Options A, B, and C for each meal must be completely different in concept, not just different quantities of the same food (e.g. do not give "chicken rice", "chicken with vegetables", "grilled chicken" as 3 options — they all center on chicken).
+- Each meal option must represent a different cuisine style or food category where possible (e.g. one option could be traditional Saudi, one Mediterranean, one light/modern).
+- Morning snack and afternoon snack must differ: one fruit-based, one protein-based or grain-based, and the three options inside each snack must still be different foods.
+
+SPECIFICITY RULES:
+- Every food item name includes the food and its exact gram weight is in grams (for example cooked rice at 150 grams, not just rice).
+- Sauces, oils, and condiments are their own items, with grams or milliliters in the name and calories in the calories field (for example olive oil, 5 ml, 45 calories).
+- Drinks are their own items with a quantity (water, tea, and similar).
+- Write every name, title, preparation, and note in ${languageName}.
+
+SAUDI CONTEXT:
+- Prioritize foods commonly available in Saudi supermarkets.
+- Include traditional Saudi dishes as at least one option per main meal (e.g. kabsa, shawarma, fool, tameez).
+- Avoid exotic ingredients that are hard to find locally.
+
+STRICT NO-REPETITION CHECK:
+- Before finalizing your response, review all meal options and confirm that no main protein, grain, or vegetable ingredient is repeated more than twice across all meals and options combined. If you find repetition, replace the repeated item with a different food.
+- Do NOT use standalone dashes (-- or ---) anywhere, and do not use em dashes.
 - No markdown, no headings inside strings, no extra keys.`;
 
   const content = await callOpenAI(
@@ -337,7 +475,7 @@ Rules:
       messages: [
         {
           role: "system",
-          content: `${languageDirective(lang)}\nYou are Coach Nova, a certified nutritionist. You write detailed diet plans that can only fit the specific person described. Always respond with valid JSON only, no markdown.`,
+          content: `${languageDirective(lang)}\nYou are Coach Nova, a certified nutritionist. You write detailed diet plans that can only fit the specific person described, including their allergies and conditions. Always respond with valid JSON only, no markdown, and never use standalone dashes.`,
         },
         { role: "user", content: userPrompt },
       ],

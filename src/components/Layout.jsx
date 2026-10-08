@@ -1,10 +1,15 @@
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { History } from "lucide-react";
 
 import HistoryPanel from "./HistoryPanel.jsx";
 import Navbar from "./Navbar.jsx";
+import Toast from "./Toast.jsx";
 import { useHistory } from "../context/historyContext.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
+
+const MIGRATION_TOAST_KEY = "dietary_migration_toast";
+let migrationToastHeld = false;
 
 function HistoryButton({ onClick }) {
   const { t } = useLanguage();
@@ -21,11 +26,41 @@ function HistoryButton({ onClick }) {
   );
 }
 
+function MigrationToast() {
+  const { t } = useLanguage();
+  const [visible, setVisible] = useState(() => {
+    if (migrationToastHeld) return true;
+    if (typeof sessionStorage === "undefined") return false;
+    if (sessionStorage.getItem(MIGRATION_TOAST_KEY) !== "1") return false;
+    migrationToastHeld = true;
+    return true;
+  });
+
+  useEffect(() => {
+    if (!migrationToastHeld || typeof sessionStorage === "undefined") return undefined;
+    sessionStorage.removeItem(MIGRATION_TOAST_KEY);
+    return undefined;
+  }, []);
+
+  return (
+    <Toast
+      message={t("storage.migrated")}
+      visible={visible}
+      onDismiss={() => {
+        migrationToastHeld = false;
+        setVisible(false);
+      }}
+    />
+  );
+}
+
 export default function Layout({ children }) {
   const { pathname } = useLocation();
   const {
     foodLog,
     bmiHistory,
+    historyLoading,
+    historyError,
     isHistoryOpen,
     openHistory,
     closeHistory,
@@ -69,9 +104,12 @@ export default function Layout({ children }) {
         onClose={closeHistory}
         foodLog={foodLog}
         bmiHistory={bmiHistory}
+        historyLoading={historyLoading}
+        historyError={historyError}
         onClearFood={clearFood}
         onClearBMI={clearBmi}
       />
+      <MigrationToast />
     </div>
   );
 }

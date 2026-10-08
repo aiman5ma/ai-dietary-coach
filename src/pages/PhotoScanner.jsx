@@ -16,10 +16,9 @@ import FoodCardSkeleton from "../components/FoodCardSkeleton.jsx";
 import { mealForNow } from "../utils/meals.js";
 import Toast from "../components/Toast.jsx";
 import { analyzePhoto } from "../api/openai.js";
-import { useHistory } from "../context/historyContext.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
+import { getFoods, logDaily, logFood } from "../lib/storage.js";
 import { generateId } from "../utils/bmi.js";
-import { addDailyFood } from "../utils/dailyLog.js";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
@@ -85,6 +84,7 @@ export default function PhotoScanner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [meal, setMeal] = useState("lunch");
   const [isDragging, setIsDragging] = useState(false);
 
@@ -93,7 +93,6 @@ export default function PhotoScanner() {
     message: "",
     type: "success",
   });
-  const { addFoodEntry } = useHistory();
 
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -226,8 +225,8 @@ export default function PhotoScanner() {
     }
   }
 
-  function handleSave() {
-    if (!result || isSaved) return;
+  async function handleSave() {
+    if (!result || isSaved || saving) return;
     const entry = withTimestamp({
       id: result.id,
       type: "photo",
@@ -241,22 +240,30 @@ export default function PhotoScanner() {
       sugar: Number(result.sugar) || 0,
       note: result.description || "",
     });
-    addFoodEntry(entry);
-    addDailyFood({
-      id: entry.id,
-      timestamp: entry.date,
-      foodName: entry.foodName,
-      calories: entry.calories,
-      protein: entry.protein,
-      carbs: entry.carbs,
-      fat: entry.fat,
-      fiber: entry.fiber,
-      sugar: entry.sugar,
-      source: "scanner",
-      meal,
-    });
-    setIsSaved(true);
-    showToast(t("scanner.savedToast"), "success");
+    setSaving(true);
+    try {
+      await logFood(entry);
+      await getFoods();
+      await logDaily({
+        id: entry.id,
+        timestamp: entry.date,
+        foodName: entry.foodName,
+        calories: entry.calories,
+        protein: entry.protein,
+        carbs: entry.carbs,
+        fat: entry.fat,
+        fiber: entry.fiber,
+        sugar: entry.sugar,
+        source: "scanner",
+        meal,
+      });
+      setIsSaved(true);
+      showToast(t("scanner.savedToast"), "success");
+    } catch {
+      showToast(t("storage.saveFailed"), "error");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -468,6 +475,7 @@ export default function PhotoScanner() {
               aiNote={result.description}
               onSave={handleSave}
               isSaved={isSaved}
+              saving={saving}
               meal={meal}
               onMealChange={setMeal}
               thumbnailSrc={result.photoDataUri}

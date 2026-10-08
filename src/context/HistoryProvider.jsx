@@ -1,46 +1,99 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import useLocalStorage from "../hooks/useLocalStorage.js";
+import { useAuth } from "./AuthContext.jsx";
+import { HistoryContext } from "./historyContext.js";
 import {
-  BMI_HISTORY_KEY,
-  FOOD_LOG_KEY,
-  HistoryContext,
-} from "./historyContext.js";
+  clearBmiHistory,
+  clearFoods,
+  getBMIHistory,
+  getFoods,
+  subscribeBmi,
+  subscribeFoods,
+} from "../lib/storage.js";
+
+function readLocal(key) {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
- * Provider that owns the food-log + BMI-history lists (persisted to
- * localStorage) and the open/close state of the global HistoryPanel.
- *
- * Place once near the root of the tree (App.jsx). Pages and the Layout
- * read from it via the `useHistory()` hook.
+ * Shared food and BMI history. Guests stay on localStorage.
+ * Signed-in users load the same lists from Supabase through storage.js.
  */
 export default function HistoryProvider({ children }) {
-  const [foodLog, setFoodLog] = useLocalStorage(FOOD_LOG_KEY, []);
-  const [bmiHistory, setBmiHistory] = useLocalStorage(BMI_HISTORY_KEY, []);
+  const { user, loading: authLoading } = useAuth();
+  const [foodLog, setFoodLog] = useState(() => (user ? [] : readLocal("dietary_food_log")));
+  const [bmiHistory, setBmiHistory] = useState(() => (user ? [] : readLocal("dietary_bmi_history")));
+  const [historyLoading, setHistoryLoading] = useState(() => Boolean(user));
+  const [historyError, setHistoryError] = useState("");
   const [isHistoryOpen, setHistoryOpen] = useState(false);
+
+  const reload = useCallback(async () => {
+    const [foods, bmi] = await Promise.all([getFoods(), getBMIHistory()]);
+    setFoodLog(Array.isArray(foods) ? foods : []);
+    setBmiHistory(Array.isArray(bmi) ? bmi : []);
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) return undefined;
+    let active = true;
+
+    async function load() {
+      await Promise.resolve();
+      if (!active) return;
+      setHistoryLoading(true);
+      setHistoryError("");
+      try {
+        await reload();
+      } catch {
+        if (active) setHistoryError("storage.loadFailed");
+      } finally {
+        if (active) setHistoryLoading(false);
+      }
+    }
+
+    void load();
+    const stopFoods = subscribeFoods(() => {
+      getFoods().then((foods) => {
+        if (active) setFoodLog(Array.isArray(foods) ? foods : []);
+      }).catch(() => {});
+    });
+    const stopBmi = subscribeBmi(() => {
+      getBMIHistory().then((bmi) => {
+        if (active) setBmiHistory(Array.isArray(bmi) ? bmi : []);
+      }).catch(() => {});
+    });
+    return () => {
+      active = false;
+      stopFoods();
+      stopBmi();
+    };
+  }, [authLoading, user, reload]);
 
   const openHistory = useCallback(() => setHistoryOpen(true), []);
   const closeHistory = useCallback(() => setHistoryOpen(false), []);
 
-  const addFoodEntry = useCallback(
-    (entry) =>
-      setFoodLog((prev) => [entry, ...(Array.isArray(prev) ? prev : [])]),
-    [setFoodLog],
-  );
-  const addBmiEntry = useCallback(
-    (entry) =>
-      setBmiHistory((prev) => [entry, ...(Array.isArray(prev) ? prev : [])]),
-    [setBmiHistory],
-  );
-  const clearFood = useCallback(() => setFoodLog([]), [setFoodLog]);
-  const clearBmi = useCallback(() => setBmiHistory([]), [setBmiHistory]);
+  const clearFood = useCallback(async () => {
+    const next = await clearFoods();
+    setFoodLog(next);
+  }, []);
+  const clearBmi = useCallback(async () => {
+    const next = await clearBmiHistory();
+    setBmiHistory(next);
+  }, []);
 
   const value = useMemo(
     () => ({
       foodLog,
       bmiHistory,
-      addFoodEntry,
-      addBmiEntry,
+      historyLoading,
+      historyError,
+      reloadHistory: reload,
       clearFood,
       clearBmi,
       isHistoryOpen,
@@ -50,8 +103,9 @@ export default function HistoryProvider({ children }) {
     [
       foodLog,
       bmiHistory,
-      addFoodEntry,
-      addBmiEntry,
+      historyLoading,
+      historyError,
+      reload,
       clearFood,
       clearBmi,
       isHistoryOpen,
@@ -60,7 +114,5 @@ export default function HistoryProvider({ children }) {
     ],
   );
 
-  return (
-    <HistoryContext.Provider value={value}>{children}</HistoryContext.Provider>
-  );
+  return <HistoryContext.Provider value={value}>{children}</HistoryContext.Provider>;
 }

@@ -1,65 +1,112 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-const USER_KEY = "dietary_user";
+import { saveProfile, getProfile } from "../lib/db.js";
+import { migrateLocalData, setStorageUser } from "../lib/storage.js";
+import { supabase } from "../lib/supabase.js";
+
 const GUEST_KEY = "dietary_guest";
 
-function readSession() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(USER_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed.email === "string" && parsed.email.trim()) {
-        return { kind: "user", email: parsed.email.trim() };
-      }
-    }
-    if (window.localStorage.getItem(GUEST_KEY) === "true") {
-      return { kind: "guest" };
-    }
-  } catch {
-    /* malformed storage — treat as signed out */
-  }
-  return null;
+function readGuest() {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(GUEST_KEY) === "true";
+}
+
+async function ensureProfile(userId, fullName) {
+  const existing = await getProfile(userId);
+  if (existing) return;
+  await saveProfile({ id: userId, full_name: fullName });
 }
 
 const AuthContext = createContext(null);
 
 /**
- * Mock session for the landing page. A signed-in user is stored as JSON
- * under `dietary_user` (email only — the password is never saved).
- * A guest is a `dietary_guest=true` flag. Either one unlocks the app.
+ * Supabase session plus the existing one-tap guest flag.
+ * A signed-in user wins over a guest. Guest mode never calls Supabase.
  */
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(readSession);
+  const [session, setSession] = useState(null);
+  const [user, setUser] = useState(null);
+  const [isGuest, setIsGuest] = useState(readGuest);
+  const [loading, setLoading] = useState(() => Boolean(supabase));
 
-  const login = useCallback((email) => {
-    const next = { email: String(email).trim(), loggedInAt: Date.now() };
-    window.localStorage.setItem(USER_KEY, JSON.stringify(next));
-    window.localStorage.removeItem(GUEST_KEY);
-    setSession({ kind: "user", email: next.email });
+  useEffect(() => {
+    if (!supabase) return undefined;
+
+    let active = true;
+    let generation = 0;
+
+    async function applySession(nextSession) {
+      const token = ++generation;
+      const nextUser = nextSession?.user ?? null;
+      setStorageUser(nextUser);
+      if (nextUser) {
+        try {
+          const result = await migrateLocalData(nextUser);
+          if (result.migrated) sessionStorage.setItem("dietary_migration_toast", "1");
+        } catch {
+          /* keep local copies when the upload fails */
+        }
+        const fullName = nextUser.user_metadata?.full_name;
+        if (typeof fullName === "string" && fullName.trim()) {
+          ensureProfile(nextUser.id, fullName.trim()).catch(() => {});
+        }
+      }
+      if (!active || token !== generation) return;
+      setSession(nextSession);
+      setUser(nextUser);
+      if (nextUser) {
+        window.localStorage.removeItem(GUEST_KEY);
+        setIsGuest(false);
+      }
+      setLoading(false);
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      applySession(data.session ?? null).catch(() => {
+        if (active) setLoading(false);
+      });
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      queueMicrotask(() => {
+        applySession(nextSession).catch(() => {
+          if (active) setLoading(false);
+        });
+      });
+    });
+
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
   }, []);
 
   const continueAsGuest = useCallback(() => {
     window.localStorage.setItem(GUEST_KEY, "true");
-    window.localStorage.removeItem(USER_KEY);
-    setSession({ kind: "guest" });
+    setIsGuest(true);
   }, []);
 
-  const logout = useCallback(() => {
-    window.localStorage.removeItem(USER_KEY);
+  const signOut = useCallback(async () => {
     window.localStorage.removeItem(GUEST_KEY);
+    setStorageUser(null);
+    setIsGuest(false);
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     setSession(null);
+    setUser(null);
   }, []);
 
   const value = useMemo(
     () => ({
+      user,
       session,
-      isAuthed: session !== null,
-      login,
+      isGuest,
+      signOut,
+      loading,
       continueAsGuest,
-      logout,
     }),
-    [session, login, continueAsGuest, logout],
+    [user, session, isGuest, signOut, loading, continueAsGuest],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -7,10 +7,9 @@ import MealPicker from "../components/MealPicker.jsx";
 import { mealForNow } from "../utils/meals.js";
 import Toast from "../components/Toast.jsx";
 import { analyzeNutrition } from "../api/openai.js";
-import { useHistory } from "../context/historyContext.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
+import { getFoods, logDaily, logFood } from "../lib/storage.js";
 import { generateId } from "../utils/bmi.js";
-import { addDailyFood } from "../utils/dailyLog.js";
 
 const OZ_TO_GRAMS = 28.3495;
 
@@ -175,7 +174,7 @@ function FoodRow({
   );
 }
 
-function CombinedTotals({ results, isSaved, onSave, meal, onMealChange }) {
+function CombinedTotals({ results, isSaved, saving, onSave, meal, onMealChange }) {
   const { t } = useLanguage();
   const totals = {
     calories: sumField(results, "calories"),
@@ -223,13 +222,13 @@ function CombinedTotals({ results, isSaved, onSave, meal, onMealChange }) {
 
       <div className="mt-5 flex flex-col gap-3">
         {onMealChange ? (
-          <MealPicker value={meal} onChange={onMealChange} disabled={isSaved} />
+          <MealPicker value={meal} onChange={onMealChange} disabled={isSaved || saving} />
         ) : null}
         <div>
         <button
           type="button"
           onClick={onSave}
-          disabled={isSaved}
+          disabled={isSaved || saving}
           aria-pressed={isSaved}
           className={[
             "btn-press inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-200 sm:w-auto",
@@ -238,7 +237,7 @@ function CombinedTotals({ results, isSaved, onSave, meal, onMealChange }) {
               : "bg-[var(--accent-green)] text-[var(--on-accent)] dark:text-[#f0f6fc] hover:bg-[var(--accent-green)]/90 active:bg-[var(--accent-green)]/80",
           ].join(" ")}
         >
-          {isSaved ? t("common.saved") : t("common.saveToLog")}
+          {isSaved ? t("common.saved") : saving ? t("common.loading") : t("common.saveToLog")}
         </button>
         </div>
       </div>
@@ -254,6 +253,7 @@ export default function NutritionAnalyzer() {
   const [error, setError] = useState("");
   const [results, setResults] = useState(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [meal, setMeal] = useState("lunch");
   const [toast, setToast] = useState({
     visible: false,
@@ -262,7 +262,6 @@ export default function NutritionAnalyzer() {
   });
   const [lastRequest, setLastRequest] = useState(null);
 
-  const { addFoodEntry } = useHistory();
   const nameRefs = useRef(new Map());
   const weightRefs = useRef(new Map());
   const abortRef = useRef(null);
@@ -431,76 +430,75 @@ export default function NutritionAnalyzer() {
     return result?.weightLabel || "";
   }
 
-  function handleSave() {
-    if (!results?.length || isSaved) return;
+  async function handleSave() {
+    if (!results?.length || isSaved || saving) return;
+    setSaving(true);
 
-    if (results.length === 1) {
-      const result = results[0];
-      const entry = withTimestamp({
-        id: result.id,
-        foodName: result.foodName,
-        weight: resultWeight(result),
-        weightGrams: result.weightGrams,
-        calories: Number(result.calories) || 0,
-        protein: Number(result.protein) || 0,
-        carbs: Number(result.carbs) || 0,
-        fat: Number(result.fat) || 0,
-        fiber: Number(result.fiber) || 0,
-        sugar: Number(result.sugar) || 0,
-        note: result.note || "",
+    const entry =
+      results.length === 1
+        ? withTimestamp({
+            id: results[0].id,
+            foodName: results[0].foodName,
+            weight: resultWeight(results[0]),
+            weightGrams: results[0].weightGrams,
+            calories: Number(results[0].calories) || 0,
+            protein: Number(results[0].protein) || 0,
+            carbs: Number(results[0].carbs) || 0,
+            fat: Number(results[0].fat) || 0,
+            fiber: Number(results[0].fiber) || 0,
+            sugar: Number(results[0].sugar) || 0,
+            note: results[0].note || "",
+          })
+        : withTimestamp({
+            id: generateId(),
+            foodName: results.map((result) => result.foodName).join(", "),
+            weight: results.map((result) => resultWeight(result)).join(", "),
+            weightGrams: results.reduce((sum, result) => sum + (Number(result.weightGrams) || 0), 0),
+            calories: sumField(results, "calories"),
+            protein: sumField(results, "protein"),
+            carbs: sumField(results, "carbs"),
+            fat: sumField(results, "fat"),
+            fiber: sumField(results, "fiber"),
+            sugar: sumField(results, "sugar"),
+            note: "",
+            foods: results.map((result) => ({
+              id: result.id,
+              foodName: result.foodName,
+              weight: resultWeight(result),
+              weightGrams: result.weightGrams,
+              calories: Number(result.calories) || 0,
+              protein: Number(result.protein) || 0,
+              carbs: Number(result.carbs) || 0,
+              fat: Number(result.fat) || 0,
+              fiber: Number(result.fiber) || 0,
+              sugar: Number(result.sugar) || 0,
+              note: result.note || "",
+            })),
+          });
+
+    try {
+      await logFood(entry);
+      await getFoods();
+      await logDaily({
+        id: entry.id,
+        timestamp: entry.date,
+        foodName: entry.foodName,
+        calories: Number(entry.calories) || 0,
+        protein: Number(entry.protein) || 0,
+        carbs: Number(entry.carbs) || 0,
+        fat: Number(entry.fat) || 0,
+        fiber: Number(entry.fiber) || 0,
+        sugar: Number(entry.sugar) || 0,
+        source: "analyzed",
+        meal,
       });
-      addFoodEntry(entry);
-      saveDailyFrom(entry);
-    } else {
-      const foods = results.map((result) => ({
-        id: result.id,
-        foodName: result.foodName,
-        weight: resultWeight(result),
-        weightGrams: result.weightGrams,
-        calories: Number(result.calories) || 0,
-        protein: Number(result.protein) || 0,
-        carbs: Number(result.carbs) || 0,
-        fat: Number(result.fat) || 0,
-        fiber: Number(result.fiber) || 0,
-        sugar: Number(result.sugar) || 0,
-        note: result.note || "",
-      }));
-      const entry = withTimestamp({
-        id: generateId(),
-        foodName: foods.map((food) => food.foodName).join(", "),
-        weight: foods.map((food) => food.weight).join(", "),
-        weightGrams: foods.reduce((sum, food) => sum + food.weightGrams, 0),
-        calories: sumField(foods, "calories"),
-        protein: sumField(foods, "protein"),
-        carbs: sumField(foods, "carbs"),
-        fat: sumField(foods, "fat"),
-        fiber: sumField(foods, "fiber"),
-        sugar: sumField(foods, "sugar"),
-        note: "",
-        foods,
-      });
-      addFoodEntry(entry);
-      saveDailyFrom(entry);
+      setIsSaved(true);
+      showToast(t("nutrition.savedToast"), "success");
+    } catch {
+      showToast(t("storage.saveFailed"), "error");
+    } finally {
+      setSaving(false);
     }
-
-    setIsSaved(true);
-    showToast(t("nutrition.savedToast"), "success");
-  }
-
-  function saveDailyFrom(entry) {
-    addDailyFood({
-      id: entry.id,
-      timestamp: entry.date,
-      foodName: entry.foodName,
-      calories: Number(entry.calories) || 0,
-      protein: Number(entry.protein) || 0,
-      carbs: Number(entry.carbs) || 0,
-      fat: Number(entry.fat) || 0,
-      fiber: Number(entry.fiber) || 0,
-      sugar: Number(entry.sugar) || 0,
-      source: "analyzed",
-      meal,
-    });
   }
 
   const showSuggestions = !results?.length && !loading && !error;
@@ -624,6 +622,7 @@ export default function NutritionAnalyzer() {
                 aiNote={result.note}
                 onSave={results.length === 1 ? handleSave : undefined}
                 isSaved={isSaved}
+                saving={saving}
                 meal={meal}
                 onMealChange={results.length === 1 ? setMeal : undefined}
               />
@@ -634,6 +633,7 @@ export default function NutritionAnalyzer() {
           <CombinedTotals
             results={results}
             isSaved={isSaved}
+            saving={saving}
             onSave={handleSave}
             meal={meal}
             onMealChange={setMeal}

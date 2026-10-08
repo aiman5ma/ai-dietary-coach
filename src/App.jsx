@@ -1,9 +1,11 @@
+import { Loader2 } from "lucide-react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import ApiKeySetup from "./components/ApiKeySetup.jsx";
 import Layout from "./components/Layout.jsx";
 import { isApiKeyConfigured } from "./api/openai.js";
-import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
+import { useAuth } from "./context/AuthContext.jsx";
+import { useLanguage } from "./context/LanguageContext.jsx";
 import HistoryProvider from "./context/HistoryProvider.jsx";
 
 import LandingPage from "./pages/LandingPage.jsx";
@@ -12,11 +14,28 @@ import BMICalculator from "./pages/BMICalculator.jsx";
 import PhotoScanner from "./pages/PhotoScanner.jsx";
 import NutritionChat from "./pages/NutritionChat.jsx";
 import CalorieTracker from "./pages/CalorieTracker.jsx";
+import ProfilePage from "./pages/ProfilePage.jsx";
+
+function AuthLoading() {
+  const { t } = useLanguage();
+  return (
+    <div className="grid min-h-dvh place-items-center bg-[var(--bg-primary)] text-[var(--text-secondary)] dark:bg-[#0d1117] dark:text-[#f0f6fc]">
+      <Loader2
+        className="h-8 w-8 animate-spin text-[var(--accent-green)]"
+        aria-label={t("common.loading")}
+      />
+    </div>
+  );
+}
 
 function AppRoutes() {
-  const { isAuthed } = useAuth();
+  const { user, isGuest, loading } = useAuth();
 
-  if (!isAuthed) {
+  if (loading) {
+    return <AuthLoading />;
+  }
+
+  if (!user && !isGuest) {
     return (
       <Routes>
         <Route path="/" element={<LandingPage />} />
@@ -34,6 +53,7 @@ function AppRoutes() {
           <Route path="/scanner" element={<PhotoScanner />} />
           <Route path="/chat" element={<NutritionChat />} />
           <Route path="/tracker" element={<CalorieTracker />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>
@@ -51,9 +71,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <AppRoutes />
     </BrowserRouter>
   );
 }

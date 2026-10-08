@@ -1,4 +1,4 @@
-import { Bookmark, Check, Flame, Sparkles } from "lucide-react";
+import { Bookmark, Check, Flame, Loader2, Sparkles } from "lucide-react";
 
 import { useLanguage } from "../context/LanguageContext.jsx";
 import MacroBar from "./MacroBar.jsx";
@@ -50,6 +50,7 @@ export default function FoodCard({
   aiNote,
   onSave,
   isSaved = false,
+  saving = false,
   meal,
   onMealChange,
   thumbnailSrc,
@@ -125,13 +126,13 @@ export default function FoodCard({
       {onSave ? (
         <div className="mt-5 flex flex-col gap-3">
           {onMealChange ? (
-            <MealPicker value={meal} onChange={onMealChange} disabled={isSaved} />
+            <MealPicker value={meal} onChange={onMealChange} disabled={isSaved || saving} />
           ) : null}
           <div>
           <button
             type="button"
             onClick={onSave}
-            disabled={isSaved}
+            disabled={isSaved || saving}
             aria-pressed={isSaved}
             className={[
               "btn-press inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-200 sm:w-auto",
@@ -142,10 +143,12 @@ export default function FoodCard({
           >
             {isSaved ? (
               <Check className="h-4 w-4" aria-hidden="true" />
+            ) : saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
               <Bookmark className="h-4 w-4" aria-hidden="true" />
             )}
-            <span>{isSaved ? t("common.saved") : t("common.saveToLog")}</span>
+            <span>{isSaved ? t("common.saved") : saving ? t("common.loading") : t("common.saveToLog")}</span>
           </button>
           </div>
         </div>

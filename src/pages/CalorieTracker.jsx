@@ -6,16 +6,12 @@ import MacroBar from "../components/MacroBar.jsx";
 import MealPicker from "../components/MealPicker.jsx";
 import { MEAL_IDS, mealForNow, mealLabelKey } from "../utils/meals.js";
 import { getDailySummary } from "../api/openai.js";
+import { useAuth } from "../context/AuthContext.jsx";
 import { useHistory } from "../context/historyContext.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
+import { clearDaily, deleteDaily, getBMIHistory, getDailyLog, logDaily } from "../lib/storage.js";
 import { generateId } from "../utils/bmi.js";
-import {
-  addDailyFood,
-  clearDailyFood,
-  ensureTodayLog,
-  readCalorieTarget,
-  removeDailyFood,
-} from "../utils/dailyLog.js";
+import { ensureTodayLog, readCalorieTarget, todayDateKey } from "../utils/dailyLog.js";
 
 const SOURCE_META = {
   analyzed: {
@@ -90,6 +86,37 @@ const MACRO_FIELDS = [
 
 function round(value) {
   return Math.round(Number(value) || 0);
+}
+
+function positive(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function targetFromHistory(history) {
+  const newest = [...(history || [])].sort((a, b) => {
+    const aTime = new Date(a?.date ?? a?.timestamp ?? 0).getTime();
+    const bTime = new Date(b?.date ?? b?.timestamp ?? 0).getTime();
+    return bTime - aTime;
+  })[0];
+  const calorieTarget = Number(newest?.calorieTarget);
+  if (!Number.isFinite(calorieTarget) || calorieTarget <= 0) return null;
+  const plan = newest?.dietPlan;
+  return {
+    calorieTarget,
+    goal: typeof newest?.goal === "string" ? newest.goal : null,
+    protein: positive(plan?.proteinGrams),
+    carbs: positive(plan?.carbGrams),
+    fat: positive(plan?.fatGrams),
+  };
+}
+
+function applyDailyResult(current, result) {
+  if (Array.isArray(result)) return result;
+  if (result && typeof result === "object") {
+    return [result, ...current.filter((entry) => entry?.id !== result.id)];
+  }
+  return current;
 }
 
 function withTimestamp(fields) {
@@ -295,9 +322,14 @@ function FoodEntry({ entry, locale, t, onDelete }) {
 
 export default function CalorieTracker() {
   const { t, lang } = useLanguage();
-  const { foodLog } = useHistory();
-  const [entries, setEntries] = useState(() => ensureTodayLog());
-  const [target] = useState(() => readCalorieTarget());
+  const { user } = useAuth();
+  const { foodLog, historyLoading, historyError } = useHistory();
+  const [entries, setEntries] = useState(() => (user ? [] : ensureTodayLog()));
+  const [listLoading, setListLoading] = useState(() => Boolean(user));
+  const [target, setTarget] = useState(() => (user ? null : readCalorieTarget()));
+  const [targetLoading, setTargetLoading] = useState(() => Boolean(user));
+  const [loadError, setLoadError] = useState("");
+  const [savingEntry, setSavingEntry] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [formError, setFormError] = useState("");
@@ -316,6 +348,43 @@ export default function CalorieTracker() {
   const remaining = target ? target.calorieTarget - consumed : 0;
   const locale = lang === "ar" ? "ar" : "en";
   const historyItems = useMemo(() => recentFoods(foodLog), [foodLog]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function load() {
+      await Promise.resolve();
+      if (!active) return;
+      if (user) {
+        setListLoading(true);
+        setTargetLoading(true);
+      }
+      try {
+        const [daily, history] = await Promise.all([getDailyLog(todayDateKey()), getBMIHistory()]);
+        if (!active) return;
+        setEntries(Array.isArray(daily) ? daily : []);
+        setTarget(targetFromHistory(history));
+        setLoadError("");
+      } catch {
+        if (!active) return;
+        setLoadError("storage.loadFailed");
+        if (!user) {
+          setEntries(ensureTodayLog());
+          setTarget(readCalorieTarget());
+        }
+      } finally {
+        if (active) {
+          setListLoading(false);
+          setTargetLoading(false);
+        }
+      }
+    }
+
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     const abort = summaryAbort;
@@ -353,23 +422,32 @@ export default function CalorieTracker() {
     setHistoryOpen(true);
   }
 
-  function addFromHistory(food) {
-    const next = addDailyFood(
-      withTimestamp({
-        id: generateId(),
-        foodName: food.foodName,
-        calories: food.calories,
-        protein: food.protein,
-        carbs: food.carbs,
-        fat: food.fat,
-        fiber: food.fiber,
-        sugar: food.sugar,
-        source: food.source,
-        meal: MEAL_IDS.includes(historyMeal) ? historyMeal : "snack",
-      }),
-    );
-    setEntries(next);
-    clearSummary();
+  async function addFromHistory(food) {
+    if (savingEntry) return;
+    setSavingEntry(true);
+    setLoadError("");
+    try {
+      const next = await logDaily(
+        withTimestamp({
+          id: generateId(),
+          foodName: food.foodName,
+          calories: food.calories,
+          protein: food.protein,
+          carbs: food.carbs,
+          fat: food.fat,
+          fiber: food.fiber,
+          sugar: food.sugar,
+          source: food.source,
+          meal: MEAL_IDS.includes(historyMeal) ? historyMeal : "snack",
+        }),
+      );
+      setEntries((current) => applyDailyResult(current, next));
+      clearSummary();
+    } catch {
+      setLoadError("storage.saveFailed");
+    } finally {
+      setSavingEntry(false);
+    }
   }
 
   function openForm(meal) {
@@ -382,8 +460,9 @@ export default function CalorieTracker() {
     });
   }
 
-  function handleAdd(event) {
+  async function handleAdd(event) {
     event.preventDefault();
+    if (savingEntry) return;
     const foodName = draft.foodName.trim();
     const calories = Number(draft.calories);
     if (!foodName) {
@@ -398,35 +477,56 @@ export default function CalorieTracker() {
       const number = Number(draft[key]);
       return Number.isFinite(number) && number > 0 ? number : 0;
     };
-    const next = addDailyFood(
-      withTimestamp({
-        id: generateId(),
-        foodName,
-        calories,
-        protein: optional("protein"),
-        carbs: optional("carbs"),
-        fat: optional("fat"),
-        fiber: optional("fiber"),
-        sugar: optional("sugar"),
-        source: "manual",
-        meal: MEAL_IDS.includes(draft.meal) ? draft.meal : "snack",
-      }),
-    );
-    setEntries(next);
-    resetDraft(draft.meal);
-    setShowForm(false);
-    clearSummary();
+    setSavingEntry(true);
+    setLoadError("");
+    try {
+      const next = await logDaily(
+        withTimestamp({
+          id: generateId(),
+          foodName,
+          calories,
+          protein: optional("protein"),
+          carbs: optional("carbs"),
+          fat: optional("fat"),
+          fiber: optional("fiber"),
+          sugar: optional("sugar"),
+          source: "manual",
+          meal: MEAL_IDS.includes(draft.meal) ? draft.meal : "snack",
+        }),
+      );
+      setEntries((current) => applyDailyResult(current, next));
+      resetDraft(draft.meal);
+      setShowForm(false);
+      clearSummary();
+    } catch {
+      setLoadError("storage.saveFailed");
+    } finally {
+      setSavingEntry(false);
+    }
   }
 
-  function handleDelete(id) {
-    setEntries(removeDailyFood(id));
-    clearSummary();
+  async function handleDelete(id) {
+    setLoadError("");
+    try {
+      const next = await deleteDaily(id);
+      if (Array.isArray(next)) setEntries(next);
+      else setEntries((current) => current.filter((entry) => entry?.id !== id));
+      clearSummary();
+    } catch {
+      setLoadError("storage.saveFailed");
+    }
   }
 
-  function handleClear() {
-    setEntries(clearDailyFood());
-    setConfirmingClear(false);
-    clearSummary();
+  async function handleClear() {
+    setLoadError("");
+    try {
+      const next = await clearDaily();
+      setEntries(Array.isArray(next) ? next : []);
+      setConfirmingClear(false);
+      clearSummary();
+    } catch {
+      setLoadError("storage.saveFailed");
+    }
   }
 
   async function handleSummary() {
@@ -469,7 +569,17 @@ export default function CalorieTracker() {
         </p>
       </header>
 
-      {target ? (
+      {loadError ? (
+        <p className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
+          {t(loadError)}
+        </p>
+      ) : null}
+
+      {targetLoading && !target ? (
+        <section className="grid min-h-40 place-items-center rounded-2xl border border-[var(--border)] bg-[var(--bg-card)]">
+          <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-green)]" aria-label={t("common.loading")} />
+        </section>
+      ) : target ? (
         <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 shadow-[0_8px_30px_rgba(0,0,0,0.25)] backdrop-blur-md dark:border-[rgba(255,255,255,0.08)] dark:bg-[rgba(22,27,34,0.95)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.55)] sm:p-6">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">
             {t("tracker.goalTitle")}
@@ -609,9 +719,10 @@ export default function CalorieTracker() {
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="submit"
-                className="btn-press inline-flex items-center justify-center rounded-xl bg-[var(--accent-green)] px-4 py-2.5 text-sm font-semibold text-[var(--on-accent)] dark:text-[#f0f6fc]"
+                disabled={savingEntry}
+                className="btn-press inline-flex items-center justify-center rounded-xl bg-[var(--accent-green)] px-4 py-2.5 text-sm font-semibold text-[var(--on-accent)] disabled:opacity-70 dark:text-[#f0f6fc]"
               >
-                {t("tracker.add")}
+                {savingEntry ? t("common.loading") : t("tracker.add")}
               </button>
               <button
                 type="button"
@@ -628,6 +739,11 @@ export default function CalorieTracker() {
         ) : null}
 
         <div className="mt-4 flex flex-col gap-5">
+          {listLoading && entries.length === 0 ? (
+            <div className="grid min-h-32 place-items-center text-[var(--text-secondary)]">
+              <Loader2 className="h-7 w-7 animate-spin text-[var(--accent-green)]" aria-label={t("common.loading")} />
+            </div>
+          ) : null}
           {MEAL_IDS.map((mealId) => {
             const items = entries
               .filter((entry) => entry.meal === mealId)
@@ -779,7 +895,15 @@ export default function CalorieTracker() {
             <div className="mt-3">
               <MealPicker value={historyMeal} onChange={setHistoryMeal} />
             </div>
-            {historyItems.length === 0 ? (
+            {historyLoading && historyItems.length === 0 ? (
+              <div className="grid min-h-24 place-items-center">
+                <Loader2 className="h-6 w-6 animate-spin text-[var(--accent-green)]" aria-label={t("common.loading")} />
+              </div>
+            ) : historyError && historyItems.length === 0 ? (
+              <p className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
+                {t(historyError)}
+              </p>
+            ) : historyItems.length === 0 ? (
               <p className="mt-4 rounded-xl border border-dashed border-[var(--border)] px-4 py-8 text-center text-sm text-[var(--text-secondary)]">
                 {t("tracker.historyEmpty")}
               </p>

@@ -1,8 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   AlertCircle,
   Check,
+  ChevronDown,
   Copy,
+  Droplets,
   Loader2,
   RotateCcw,
   Scale,
@@ -12,8 +15,9 @@ import {
 import BMIGauge from "../components/BMIGauge.jsx";
 import Toast from "../components/Toast.jsx";
 import { getBMIAdvice } from "../api/openai.js";
-import { useHistory } from "../context/historyContext.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
+import { useProfile } from "../context/ProfileContext.jsx";
+import { getBMIHistory, logBMI } from "../lib/storage.js";
 import {
   ACTIVITY_LEVELS,
   calculateBMI,
@@ -63,10 +67,40 @@ const ACTIVITY_LABEL_KEYS = {
 
 const SLOT_LABEL_KEYS = {
   breakfast: "bmi.breakfast",
+  morningsnack: "bmi.morningSnack",
   lunch: "bmi.lunch",
+  afternoonsnack: "bmi.afternoonSnack",
   dinner: "bmi.dinner",
   snack: "bmi.snack",
 };
+
+function epochNow() {
+  return Date.now();
+}
+
+function seedFromProfile(profile) {
+  const height = Number(profile?.heightCm);
+  const weight = Number(profile?.weightKg);
+  const years = Number(profile?.age);
+  const hasHeight = Number.isFinite(height) && height > 0;
+  const hasWeight = Number.isFinite(weight) && weight > 0;
+  const hasAge = Number.isInteger(years) && years >= 10 && years <= 100;
+  const hasSex = profile?.sex === "male" || profile?.sex === "female";
+  const hasActivity = Boolean(ACTIVITY_LABEL_KEYS[profile?.activityLevel]);
+  const hasGoal = GOAL_OPTIONS.some((option) => option.id === profile?.goal);
+  const conditions = Array.isArray(profile?.conditions) ? profile.conditions : [];
+  const other = typeof profile?.otherConditions === "string" ? profile.otherConditions.trim() : "";
+  return {
+    heightCm: hasHeight ? String(Math.round(height)) : "170",
+    weightValue: hasWeight ? String(round1(weight)) : "70",
+    age: hasAge ? String(years) : "",
+    sex: hasSex ? profile.sex : "",
+    activity: hasActivity ? profile.activityLevel : "sedentary",
+    goal: hasGoal ? profile.goal : "maintain",
+    fromProfile:
+      hasHeight || hasWeight || hasAge || hasSex || hasActivity || hasGoal || conditions.length > 0 || other !== "",
+  };
+}
 
 const labelClass =
   "text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] rtl:normal-case rtl:tracking-normal";
@@ -99,33 +133,65 @@ function planToText(plan, result, t) {
   );
   if (plan.proteinGrams != null && plan.carbGrams != null && plan.fatGrams != null) {
     lines.push(
-      `${t("nutrition.protein")}: ${plan.proteinGrams} ${t("common.grams")}`,
-      `${t("nutrition.carbs")}: ${plan.carbGrams} ${t("common.grams")}`,
-      `${t("nutrition.fat")}: ${plan.fatGrams} ${t("common.grams")}`,
+      `${t("nutrition.protein")}: ${plan.proteinGrams} ${t("common.grams")}${plan.proteinCalories != null ? ` = ${formatKcal(plan.proteinCalories)} ${t("bmi.kcal")}` : ""}`,
+      `${t("nutrition.carbs")}: ${plan.carbGrams} ${t("common.grams")}${plan.carbCalories != null ? ` = ${formatKcal(plan.carbCalories)} ${t("bmi.kcal")}` : ""}`,
+      `${t("nutrition.fat")}: ${plan.fatGrams} ${t("common.grams")}${plan.fatCalories != null ? ` = ${formatKcal(plan.fatCalories)} ${t("bmi.kcal")}` : ""}`,
     );
   }
   if (plan.mealsPerDay) lines.push("", t("bmi.mealsPerDay", { count: plan.mealsPerDay }));
   if (plan.meals.length) {
     lines.push("", t("bmi.exampleMeals"));
     plan.meals.forEach((meal) => {
-      const slot = SLOT_LABEL_KEYS[meal.slot] ? t(SLOT_LABEL_KEYS[meal.slot]) : meal.slot;
-      const calories =
-        meal.calories == null ? "" : ` (${t("bmi.approxCalories", { calories: formatKcal(meal.calories) })})`;
-      lines.push(`${slot}: ${meal.title}${calories}`);
-      if (meal.detail) lines.push(meal.detail);
+      const slotKey = SLOT_LABEL_KEYS[String(meal.slot || "").toLowerCase()];
+      const slot = slotKey ? t(slotKey) : meal.slot;
+      const options = Array.isArray(meal.options) ? meal.options : [];
+      if (!options.length && (meal.title || meal.detail)) {
+        lines.push(`${slot}: ${meal.title || ""}`);
+        if (meal.detail) lines.push(meal.detail);
+        return;
+      }
+      lines.push(slot);
+      options.forEach((option) => {
+        const total =
+          option.totalCalories == null
+            ? ""
+            : ` (${t("bmi.mealTotal", { calories: formatKcal(option.totalCalories) })})`;
+        lines.push(`${option.id}: ${option.title || ""}${total}`);
+        (option.items || []).forEach((item) => {
+          const grams = item.grams == null ? "" : ` ${item.grams} ${t("common.grams")}`;
+          const calories =
+            item.calories == null ? "" : ` ${t("bmi.approxCalories", { calories: formatKcal(item.calories) })}`;
+          lines.push(`${item.name}${grams}${calories}`);
+        });
+        if (option.preparation) lines.push(option.preparation);
+      });
     });
   }
-  if (plan.prioritize.length) {
-    lines.push("", t("bmi.prioritize"));
-    plan.prioritize.forEach((item) => lines.push(`- ${item}`));
+  const freeFoods = plan.eatFreely?.length ? plan.eatFreely : plan.prioritize;
+  if (freeFoods?.length) {
+    lines.push("", t("bmi.eatFreely"));
+    freeFoods.forEach((item) => lines.push(item));
   }
-  if (plan.limit.length) {
+  if (plan.limit?.length) {
     lines.push("", t("bmi.limit"));
-    plan.limit.forEach((item) => lines.push(`- ${item}`));
+    plan.limit.forEach((item) => lines.push(item));
   }
-  if (plan.guidance.length) {
-    lines.push("", t("bmi.guidance"));
-    plan.guidance.forEach((item) => lines.push(`- ${item}`));
+  if (plan.avoid?.length) {
+    lines.push("", t("bmi.avoid"));
+    plan.avoid.forEach((item) => lines.push(item));
+  }
+  const tips = plan.weeklyTips?.length ? plan.weeklyTips : plan.guidance;
+  if (tips?.length) {
+    lines.push("", t("bmi.weeklyTips"));
+    tips.forEach((item) => lines.push(item));
+  }
+  if (plan.hydrationMl != null || plan.hydrationNote) {
+    lines.push("", t("bmi.hydration"));
+    if (plan.hydrationMl != null) lines.push(t("bmi.hydrationAmount", { amount: formatKcal(plan.hydrationMl) }));
+    if (plan.hydrationNote) lines.push(plan.hydrationNote);
+  }
+  if (plan.allergyNote) {
+    lines.push("", t("bmi.allergyNote"), plan.allergyNote);
   }
   return lines.join("\n").trim();
 }
@@ -248,8 +314,9 @@ function NumberField({
   );
 }
 
-export default function BMICalculator() {
+function BMICalculatorForm({ profile }) {
   const { t, lang } = useLanguage();
+  const seeded = seedFromProfile(profile);
   const heightCmId = useId();
   const heightFtId = useId();
   const heightInId = useId();
@@ -258,17 +325,17 @@ export default function BMICalculator() {
   const activityId = useId();
 
   const [heightUnit, setHeightUnit] = useState("cm");
-  const [heightCm, setHeightCm] = useState("170");
+  const [heightCm, setHeightCm] = useState(seeded.heightCm);
   const [heightFeet, setHeightFeet] = useState("5");
   const [heightInches, setHeightInches] = useState("7");
 
   const [weightUnit, setWeightUnit] = useState("kg");
-  const [weightValue, setWeightValue] = useState("70");
+  const [weightValue, setWeightValue] = useState(seeded.weightValue);
 
-  const [age, setAge] = useState("");
-  const [sex, setSex] = useState("");
-  const [activity, setActivity] = useState("sedentary");
-  const [goal, setGoal] = useState("maintain");
+  const [age, setAge] = useState(seeded.age);
+  const [sex, setSex] = useState(seeded.sex);
+  const [activity, setActivity] = useState(seeded.activity);
+  const [goal, setGoal] = useState(seeded.goal);
 
   const [result, setResult] = useState(null);
   const [plan, setPlan] = useState(null);
@@ -277,13 +344,13 @@ export default function BMICalculator() {
 
   const [errorKey, setErrorKey] = useState("");
   const [isSaved, setIsSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState({
     visible: false,
     message: "",
     type: "success",
   });
 
-  const { addBmiEntry } = useHistory();
 
   const abortRef = useRef(null);
   const resultsRef = useRef(null);
@@ -415,6 +482,8 @@ export default function BMICalculator() {
           bmr: snapshot.bmr,
           tdee: snapshot.tdee,
           calorieTarget: snapshot.calorieTarget,
+          conditions: Array.isArray(profile.conditions) ? profile.conditions : [],
+          otherConditions: profile.otherConditions || "",
         },
         lang,
         { signal: controller.signal },
@@ -511,8 +580,8 @@ export default function BMICalculator() {
     }
   }
 
-  function handleSave() {
-    if (!result || isSaved || adviceLoading) return;
+  async function handleSave() {
+    if (!result || isSaved || saving || adviceLoading) return;
     const entry = {
       id: result.id,
       bmi: result.bmi,
@@ -530,11 +599,19 @@ export default function BMICalculator() {
       calorieTarget: result.calorieTarget,
       advice: plan ? planToText(plan, result, t) : "",
       dietPlan: plan,
-      date: Date.now(),
+      date: epochNow(),
     };
-    addBmiEntry(entry);
-    setIsSaved(true);
-    showToast(t("bmi.savedToast"), "success");
+    setSaving(true);
+    try {
+      await logBMI(entry);
+      await getBMIHistory();
+      setIsSaved(true);
+      showToast(t("bmi.savedToast"), "success");
+    } catch {
+      showToast(t("bmi.saveFailed"), "error");
+    } finally {
+      setSaving(false);
+    }
   }
 
   const sexChoices = SEX_OPTIONS.map((option) => ({
@@ -559,6 +636,18 @@ export default function BMICalculator() {
           {t("bmi.subtitle")}
         </p>
       </header>
+
+      {seeded.fromProfile ? (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/10 px-3 py-2.5 text-sm text-[var(--text-primary)]">
+          <p>{t("bmi.loadedBanner")}</p>
+          <Link
+            to="/profile"
+            className="shrink-0 font-semibold text-[var(--accent-green)] underline-offset-2 hover:underline"
+          >
+            {t("bmi.editProfile")}
+          </Link>
+        </div>
+      ) : null}
 
       <form
         onSubmit={handleSubmit}
@@ -726,6 +815,38 @@ export default function BMICalculator() {
           />
         </div>
 
+        {seeded.fromProfile ? (
+          <div className="mt-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className={labelClass}>{t("bmi.conditionsTitle")}</span>
+              <Link
+                to="/profile"
+                className="text-xs font-semibold text-[var(--accent-green)] underline-offset-2 hover:underline"
+              >
+                {t("bmi.editConditions")}
+              </Link>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(Array.isArray(profile.conditions) ? profile.conditions : []).map((id) => (
+                <span
+                  key={id}
+                  className="rounded-full border border-[var(--border)] bg-black/[0.04] px-3 py-1 text-xs font-semibold text-[var(--text-primary)] dark:bg-white/[0.06]"
+                >
+                  {t(`profile.${id}`)}
+                </span>
+              ))}
+              {profile.otherConditions?.trim() ? (
+                <span className="rounded-full border border-[var(--border)] bg-black/[0.04] px-3 py-1 text-xs font-semibold text-[var(--text-primary)] dark:bg-white/[0.06]">
+                  {profile.otherConditions.trim()}
+                </span>
+              ) : null}
+              {!profile.conditions?.length && !profile.otherConditions?.trim() ? (
+                <p className="text-sm text-[var(--text-secondary)]">{t("bmi.noConditions")}</p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         <button
           type="submit"
           className="btn-press mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent-green)] px-5 py-3 text-sm font-bold uppercase tracking-wide text-[var(--on-accent)] dark:text-[#f0f6fc] transition-colors hover:bg-[var(--accent-green)]/90 active:bg-[var(--accent-green)]/80 rtl:normal-case rtl:tracking-normal"
@@ -759,6 +880,7 @@ export default function BMICalculator() {
             adviceLoading={adviceLoading}
             adviceError={adviceError}
             isSaved={isSaved}
+            saving={saving}
             onRetryAdvice={handleRetryAdvice}
             onSave={handleSave}
             onCopyAdvice={handleCopyAdvice}
@@ -778,12 +900,31 @@ export default function BMICalculator() {
   );
 }
 
+export default function BMICalculator() {
+  const { t } = useLanguage();
+  const { profile, loading } = useProfile();
+
+  if (loading) {
+    return (
+      <div className="grid min-h-40 place-items-center text-[var(--text-secondary)]">
+        <Loader2
+          className="h-8 w-8 animate-spin text-[var(--accent-green)]"
+          aria-label={t("common.loading")}
+        />
+      </div>
+    );
+  }
+
+  return <BMICalculatorForm profile={profile} />;
+}
+
 function ResultsSection({
   result,
   plan,
   adviceLoading,
   adviceError,
   isSaved,
+  saving,
   onRetryAdvice,
   onSave,
   onCopyAdvice,
@@ -897,7 +1038,7 @@ function ResultsSection({
           <button
             type="button"
             onClick={onSave}
-            disabled={isSaved || adviceLoading}
+            disabled={isSaved || saving || adviceLoading}
             aria-pressed={isSaved}
             className={[
               "btn-press inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-200 sm:w-auto",
@@ -907,8 +1048,14 @@ function ResultsSection({
               adviceLoading ? "cursor-wait opacity-70" : "",
             ].join(" ")}
           >
-            <Check className="h-4 w-4" aria-hidden="true" />
-            <span>{isSaved ? t("common.saved") : t("common.saveToHistory")}</span>
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Check className="h-4 w-4" aria-hidden="true" />
+            )}
+            <span>
+              {isSaved ? t("common.saved") : saving ? t("common.loading") : t("common.saveToHistory")}
+            </span>
           </button>
         </div>
       </div>
@@ -920,126 +1067,232 @@ function DietPlan({ plan }) {
   const { t } = useLanguage();
   const hasMacros =
     plan.proteinGrams != null && plan.carbGrams != null && plan.fatGrams != null;
+  const freeFoods = plan.eatFreely?.length ? plan.eatFreely : plan.prioritize || [];
+  const tips = plan.weeklyTips?.length ? plan.weeklyTips : plan.guidance || [];
+  const hasFoodGroups = freeFoods.length || plan.limit?.length || plan.avoid?.length;
 
   return (
-    <div>
+    <div className="flex flex-col gap-3">
       {plan.intro ? <p className="whitespace-pre-wrap">{plan.intro}</p> : null}
       {plan.mealsPerDay ? (
-        <p className="mt-3 text-sm font-semibold text-[var(--text-primary)]">
+        <p className="text-sm font-semibold text-[var(--text-primary)]">
           {t("bmi.mealsPerDay", { count: plan.mealsPerDay })}
         </p>
       ) : null}
 
       {hasMacros ? (
-        <PlanBlock title={t("bmi.macroTargets")}>
+        <Collapse title={t("bmi.macroTargets")}>
           <dl className="grid grid-cols-3 gap-2">
-            <MacroStat label={t("nutrition.protein")} grams={plan.proteinGrams} />
-            <MacroStat label={t("nutrition.carbs")} grams={plan.carbGrams} />
-            <MacroStat label={t("nutrition.fat")} grams={plan.fatGrams} />
+            <MacroStat
+              label={t("nutrition.protein")}
+              grams={plan.proteinGrams}
+              calories={plan.proteinCalories}
+            />
+            <MacroStat
+              label={t("nutrition.carbs")}
+              grams={plan.carbGrams}
+              calories={plan.carbCalories}
+            />
+            <MacroStat
+              label={t("nutrition.fat")}
+              grams={plan.fatGrams}
+              calories={plan.fatCalories}
+            />
           </dl>
-        </PlanBlock>
+        </Collapse>
       ) : null}
 
-      {plan.meals.length ? (
-        <PlanBlock title={t("bmi.exampleMeals")}>
+      {(plan.meals || []).map((meal, index) => (
+        <MealCard key={`${meal.slot}-${index}`} meal={meal} />
+      ))}
+
+      {hasFoodGroups ? (
+        <Collapse title={t("bmi.foodGroups")}>
+          <div className="grid gap-3">
+            {freeFoods.length ? (
+              <TagGroup title={t("bmi.eatFreely")} items={freeFoods} tone="good" />
+            ) : null}
+            {plan.limit?.length ? (
+              <TagGroup title={t("bmi.limit")} items={plan.limit} tone="limit" />
+            ) : null}
+            {plan.avoid?.length ? (
+              <TagGroup title={t("bmi.avoid")} items={plan.avoid} tone="avoid" />
+            ) : null}
+          </div>
+        </Collapse>
+      ) : null}
+
+      {plan.hydrationMl != null || plan.hydrationNote ? (
+        <Collapse title={t("bmi.hydration")}>
+          <div className="flex items-start gap-3 rounded-xl border border-[#3b82f6]/25 bg-[#3b82f6]/10 px-3 py-3">
+            <Droplets className="mt-0.5 h-5 w-5 shrink-0 text-[#60a5fa]" aria-hidden="true" />
+            <div className="min-w-0">
+              {plan.hydrationMl != null ? (
+                <p className="text-base font-bold tabular-nums text-[var(--text-primary)]">
+                  {t("bmi.hydrationAmount", { amount: formatKcal(plan.hydrationMl) })}
+                </p>
+              ) : null}
+              {plan.hydrationNote ? (
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">{plan.hydrationNote}</p>
+              ) : null}
+            </div>
+          </div>
+        </Collapse>
+      ) : null}
+
+      {tips.length ? (
+        <Collapse title={t("bmi.weeklyTips")}>
           <ul className="flex flex-col gap-2">
-            {plan.meals.map((meal, index) => {
-              const slotLabel = SLOT_LABEL_KEYS[meal.slot] ? t(SLOT_LABEL_KEYS[meal.slot]) : "";
-              return (
-                <li
-                  key={`${meal.slot}-${index}`}
-                  className="rounded-xl border border-[var(--border)] bg-black/[0.03] dark:bg-white/[0.05] px-3 py-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      {slotLabel ? (
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--accent-green)] rtl:normal-case rtl:tracking-normal">
-                          {slotLabel}
-                        </p>
-                      ) : null}
-                      {meal.title ? (
-                        <p className="font-semibold text-[var(--text-primary)]">{meal.title}</p>
-                      ) : null}
-                    </div>
-                    {meal.calories != null ? (
-                      <p className="shrink-0 text-sm font-bold tabular-nums text-[var(--accent-green)]">
-                        {t("bmi.approxCalories", { calories: formatKcal(meal.calories) })}
-                      </p>
-                    ) : null}
-                  </div>
-                  {meal.detail ? (
-                    <p className="mt-1 text-sm text-[var(--text-secondary)]">{meal.detail}</p>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        </PlanBlock>
-      ) : null}
-
-      {plan.prioritize.length || plan.limit.length ? (
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          {plan.prioritize.length ? (
-            <FoodList title={t("bmi.prioritize")} items={plan.prioritize} tone="good" />
-          ) : null}
-          {plan.limit.length ? (
-            <FoodList title={t("bmi.limit")} items={plan.limit} tone="limit" />
-          ) : null}
-        </div>
-      ) : null}
-
-      {plan.guidance.length ? (
-        <PlanBlock title={t("bmi.guidance")}>
-          <ul className="flex flex-col gap-2">
-            {plan.guidance.map((item, index) => (
+            {tips.map((item, index) => (
               <li
                 key={`${index}-${item}`}
-                className="rounded-xl border border-[var(--border)] bg-black/[0.03] dark:bg-white/[0.05] px-3 py-2.5 text-sm"
+                className="rounded-xl border border-[var(--border)] bg-black/[0.03] px-3 py-2.5 text-sm dark:bg-white/[0.05]"
               >
                 {item}
               </li>
             ))}
           </ul>
-        </PlanBlock>
+        </Collapse>
+      ) : null}
+
+      {plan.allergyNote ? (
+        <Collapse title={t("bmi.allergyNote")}>
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-[var(--text-primary)]">
+            {plan.allergyNote}
+          </p>
+        </Collapse>
       ) : null}
     </div>
   );
 }
 
-function PlanBlock({ title, children }) {
+function Collapse({ title, children }) {
   return (
-    <div className="mt-5">
-      <h3 className={labelClass}>{title}</h3>
-      <div className="mt-2">{children}</div>
-    </div>
+    <details open className="group rounded-2xl border border-[var(--border)] bg-black/[0.02] dark:bg-white/[0.03]">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-3 [&::-webkit-details-marker]:hidden">
+        <span className={labelClass}>{title}</span>
+        <ChevronDown
+          className="h-4 w-4 shrink-0 text-[var(--text-secondary)] transition-transform group-open:rotate-180"
+          aria-hidden="true"
+        />
+      </summary>
+      <div className="px-3 pb-3">{children}</div>
+    </details>
   );
 }
 
-function MacroStat({ label, grams }) {
+function MealCard({ meal }) {
+  const { t } = useLanguage();
+  const options = Array.isArray(meal.options) ? meal.options : [];
+  const [optionId, setOptionId] = useState(options[0]?.id || "A");
+  const selected = options.find((option) => option.id === optionId) || options[0];
+  const slotKey = SLOT_LABEL_KEYS[String(meal.slot || "").toLowerCase()];
+  const slotLabel = slotKey ? t(slotKey) : meal.slot;
+
+  if (!selected) return null;
+
+  return (
+    <Collapse title={slotLabel}>
+      <div role="tablist" aria-label={slotLabel} className="grid grid-cols-3 gap-2">
+        {options.map((option) => {
+          const active = option.id === selected.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setOptionId(option.id)}
+              className={[
+                "btn-press rounded-xl border px-2 py-2 text-sm font-semibold transition-colors",
+                active
+                  ? "border-[var(--accent-green)]/40 bg-[var(--accent-green)]/15 text-[var(--accent-green)]"
+                  : "border-[var(--border)] bg-black/[0.04] text-[var(--text-secondary)] dark:bg-white/[0.06]",
+              ].join(" ")}
+            >
+              {t("bmi.option", { label: option.id })}
+            </button>
+          );
+        })}
+      </div>
+      {selected.title ? (
+        <p className="mt-3 font-semibold text-[var(--text-primary)]">{selected.title}</p>
+      ) : null}
+      <ul className="mt-2 flex flex-col gap-1.5">
+        {(selected.items || []).map((item, index) => (
+          <li
+            key={`${index}-${item.name}`}
+            className="flex items-baseline justify-between gap-3 text-sm"
+          >
+            <span className="min-w-0 text-[var(--text-primary)]">
+              {item.name}
+              {item.grams != null ? (
+                <span className="text-[var(--text-secondary)]">
+                  {" "}
+                  · {item.grams} {t("common.grams")}
+                </span>
+              ) : null}
+            </span>
+            {item.calories != null ? (
+              <span className="shrink-0 tabular-nums font-semibold text-[var(--accent-green)]">
+                {t("bmi.approxCalories", { calories: formatKcal(item.calories) })}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {selected.totalCalories != null ? (
+        <p className="mt-3 text-sm font-bold text-[var(--text-primary)]">
+          {t("bmi.mealTotal", { calories: formatKcal(selected.totalCalories) })}
+        </p>
+      ) : null}
+      {selected.preparation ? (
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
+          <span className="font-semibold text-[var(--text-primary)]">{t("bmi.preparation")}: </span>
+          {selected.preparation}
+        </p>
+      ) : null}
+    </Collapse>
+  );
+}
+
+function MacroStat({ label, grams, calories }) {
   const { t } = useLanguage();
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-black/[0.03] dark:bg-white/[0.05] px-2 py-2.5 text-center">
+    <div className="rounded-xl border border-[var(--border)] bg-black/[0.03] px-2 py-2.5 text-center dark:bg-white/[0.05]">
       <dt className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] rtl:normal-case rtl:tracking-normal">
         {label}
       </dt>
       <dd className="mt-1 text-sm font-bold tabular-nums text-[var(--text-primary)]">
         {grams} {t("common.grams")}
       </dd>
+      {calories != null ? (
+        <dd className="mt-0.5 text-[11px] font-semibold tabular-nums text-[var(--accent-green)]">
+          {t("bmi.approxCalories", { calories: formatKcal(calories) })}
+        </dd>
+      ) : null}
     </div>
   );
 }
 
-function FoodList({ title, items, tone }) {
+function TagGroup({ title, items, tone }) {
   const toneClass =
     tone === "good"
-      ? "border-[var(--accent-green)]/25 bg-[var(--accent-green)]/10"
-      : "border-orange-500/25 bg-orange-500/10";
+      ? "border-[var(--accent-green)]/30 bg-[var(--accent-green)]/15 text-[var(--accent-green)]"
+      : tone === "avoid"
+        ? "border-red-500/30 bg-red-500/15 text-red-700 dark:text-red-300"
+        : "border-amber-500/30 bg-amber-500/15 text-amber-800 dark:text-amber-200";
   return (
-    <div className={`rounded-xl border p-3 ${toneClass}`}>
+    <div>
       <h3 className={labelClass}>{title}</h3>
-      <ul className="mt-2 flex list-disc flex-col gap-1 ps-4 text-sm">
+      <ul className="mt-2 flex flex-wrap gap-2">
         {items.map((item, index) => (
-          <li key={`${index}-${item}`}>{item}</li>
+          <li
+            key={`${index}-${item}`}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold ${toneClass}`}
+          >
+            {item}
+          </li>
         ))}
       </ul>
     </div>

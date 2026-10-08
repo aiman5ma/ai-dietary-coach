@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Camera, Flame, Globe, Leaf, LogOut, MessageCircle, Moon, Salad, Scale, Sun } from "lucide-react";
+import { Camera, Flame, Globe, Leaf, LogOut, MessageCircle, Moon, Salad, Scale, Sun, UserRound } from "lucide-react";
 
 import { useAuth } from "../context/AuthContext.jsx";
 import { useLanguage } from "../context/LanguageContext.jsx";
 import { useTheme } from "../context/ThemeContext.jsx";
-import { readTodayCalories, subscribeDailyLog } from "../utils/dailyLog.js";
+import { getDailyLog } from "../lib/storage.js";
+import { readTodayCalories, subscribeDailyLog, todayDateKey } from "../utils/dailyLog.js";
 
 const NAV_ITEMS = [
   { to: "/", end: true, labelKey: "nav.nutrition", Icon: Salad },
@@ -15,9 +16,38 @@ const NAV_ITEMS = [
   { to: "/tracker", labelKey: "nav.tracker", Icon: Flame },
 ];
 
+function caloriesOf(entries) {
+  if (!entries?.length) return null;
+  const total = entries.reduce((sum, entry) => sum + (Number(entry?.calories) || 0), 0);
+  return Math.round(total);
+}
+
 function useTodayCalories() {
-  const [calories, setCalories] = useState(() => readTodayCalories());
-  useEffect(() => subscribeDailyLog(() => setCalories(readTodayCalories())), []);
+  const { user } = useAuth();
+  const [calories, setCalories] = useState(() => (user ? null : readTodayCalories()));
+
+  useEffect(() => {
+    let active = true;
+
+    async function load() {
+      try {
+        const entries = await getDailyLog(todayDateKey());
+        if (active) setCalories(caloriesOf(entries));
+      } catch {
+        if (active && !user) setCalories(readTodayCalories());
+      }
+    }
+
+    void load();
+    const stop = subscribeDailyLog(() => {
+      void load();
+    });
+    return () => {
+      active = false;
+      stop();
+    };
+  }, [user]);
+
   return calories;
 }
 
@@ -88,16 +118,15 @@ export function LanguageToggle({ className = "" }) {
 
 function LogoutButton({ compact = false, className = "" }) {
   const { t } = useLanguage();
-  const { session, logout } = useAuth();
+  const { isGuest, signOut } = useAuth();
   const navigate = useNavigate();
-  const label = session?.kind === "guest" ? t("nav.exit") : t("nav.logout");
+  const label = isGuest ? t("nav.exit") : t("nav.logout");
 
   return (
     <button
       type="button"
       onClick={() => {
-        logout();
-        navigate("/", { replace: true });
+        void signOut().finally(() => navigate("/", { replace: true }));
       }}
       aria-label={label}
       className={[
@@ -175,6 +204,13 @@ export default function Navbar() {
               ) : null}
             </NavLink>
           ))}
+          <NavLink to="/profile" aria-label={t("nav.profile")} className={sidebarItemClasses}>
+            <UserRound
+              className="h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-105"
+              strokeWidth={2}
+              aria-hidden="true"
+            />
+          </NavLink>
         </nav>
 
         <LanguageToggle className="w-full" />
@@ -200,7 +236,7 @@ export default function Navbar() {
         className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--border)] bg-[var(--bg-card)] backdrop-blur-md dark:border-[rgba(255,255,255,0.08)] dark:bg-[rgba(22,27,34,0.95)] dark:text-[#f0f6fc] md:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <ul className="mx-auto grid max-w-md grid-cols-5 gap-0.5 px-1.5 py-1.5">
+        <ul className="mx-auto grid max-w-lg grid-cols-6 gap-0.5 px-1.5 py-1.5">
           {NAV_ITEMS.map(({ to, end, labelKey, Icon }) => (
             <li key={to}>
               <NavLink to={to} end={end} className={bottomItemClasses}>
@@ -229,6 +265,22 @@ export default function Navbar() {
               </NavLink>
             </li>
           ))}
+          <li>
+            <NavLink to="/profile" aria-label={t("nav.profile")} className={bottomItemClasses}>
+              {({ isActive }) => (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className={[
+                      "absolute top-1 h-1 w-1 rounded-full bg-[var(--accent-green)] transition-opacity duration-200",
+                      isActive ? "opacity-100" : "opacity-0",
+                    ].join(" ")}
+                  />
+                  <UserRound className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+                </>
+              )}
+            </NavLink>
+          </li>
         </ul>
       </nav>
     </>

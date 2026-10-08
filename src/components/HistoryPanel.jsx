@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Activity, Apple, Trash2, Utensils, X } from "lucide-react";
+import { Activity, Apple, Loader2, Trash2, Utensils, X } from "lucide-react";
 
 import { useLanguage } from "../context/LanguageContext.jsx";
+import { getBMIHistory, getFoods } from "../lib/storage.js";
 
 const TABS = [
   { id: "food", labelKey: "history.foodLog", Icon: Utensils },
@@ -128,11 +129,57 @@ export default function HistoryPanel({
   onClose,
   foodLog = [],
   bmiHistory = [],
+  historyLoading = false,
+  historyError = "",
   onClearFood,
   onClearBMI,
 }) {
   const { t, isRTL } = useLanguage();
   const [activeTab, setActiveTab] = useState("food");
+  const [freshFood, setFreshFood] = useState(null);
+  const [freshBmi, setFreshBmi] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let active = true;
+
+    async function load() {
+      await Promise.resolve();
+      if (!active) return;
+      setLoading(true);
+      setError("");
+      try {
+        const [foods, bmi] = await Promise.all([getFoods(), getBMIHistory()]);
+        if (!active) return;
+        setFreshFood(foods);
+        setFreshBmi(bmi);
+      } catch {
+        if (active) setError("storage.loadFailed");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
+
+  async function handleClear() {
+    setError("");
+    try {
+      if (activeTab === "food") await onClearFood?.();
+      else await onClearBMI?.();
+      const [foods, bmi] = await Promise.all([getFoods(), getBMIHistory()]);
+      setFreshFood(foods);
+      setFreshBmi(bmi);
+    } catch {
+      setError("storage.saveFailed");
+    }
+  }
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -152,8 +199,10 @@ export default function HistoryPanel({
     };
   }, [isOpen]);
 
-  const sortedFood = sortNewestFirst(foodLog);
-  const sortedBmi = sortNewestFirst(bmiHistory);
+  const sortedFood = sortNewestFirst(freshFood ?? foodLog);
+  const sortedBmi = sortNewestFirst(freshBmi ?? bmiHistory);
+  const listLoading = loading || historyLoading;
+  const listError = error || historyError;
   const showFood = activeTab === "food";
   const activeCount = showFood ? sortedFood.length : sortedBmi.length;
   const countLabel =
@@ -239,7 +288,7 @@ export default function HistoryPanel({
             <p className="text-xs text-[var(--text-secondary)]">{countLabel}</p>
             <button
               type="button"
-              onClick={showFood ? onClearFood : onClearBMI}
+              onClick={handleClear}
               disabled={activeCount === 0}
               className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04] hover:text-[#ef4444] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--text-secondary)] dark:hover:bg-white/[0.08]"
             >
@@ -249,7 +298,15 @@ export default function HistoryPanel({
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 pb-5 pt-3">
-            {showFood ? (
+            {listLoading && activeCount === 0 ? (
+              <div className="grid min-h-40 place-items-center text-[var(--text-secondary)]">
+                <Loader2 className="h-6 w-6 animate-spin text-[var(--accent-green)]" aria-label={t("common.loading")} />
+              </div>
+            ) : listError && activeCount === 0 ? (
+              <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
+                {t(listError)}
+              </p>
+            ) : showFood ? (
               sortedFood.length === 0 ? (
                 <EmptyState
                   icon={Apple}
