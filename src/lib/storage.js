@@ -14,6 +14,8 @@ import { addDailyFood, clearDailyFood, ensureTodayLog, removeDailyFood, todayDat
 
 const FOOD_KEY = "dietary_food_log";
 const BMI_KEY = "dietary_bmi_history";
+const MEAL_HISTORY_KEY = "dietary_meal_history";
+const MEAL_HISTORY_LIMIT = 50;
 const DAILY_KEY = "dietary_daily_log";
 const DAILY_DATE_KEY = "dietary_daily_log_date";
 const PROFILE_KEY = "dietary_profile";
@@ -334,6 +336,91 @@ export async function getBMIHistory() {
   if (!user) return readArray(BMI_KEY);
   const rows = await getBmiRows(user.id);
   return rows.map(bmiFromRow);
+}
+
+function tidyMealName(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return text
+    .replace(/\s*[,،]?\s*\d+(?:[.,]\d+)?\s*(?:g|غ|grams?|جرام|ml|مل|kcal|سعرة)\b.*$/i, "")
+    .trim();
+}
+
+/** Meal titles and ingredient names from one saved or generated diet plan. */
+export function extractMealNames(plan) {
+  let source = plan;
+  if (typeof source === "string") source = parseJson(source);
+  if (!source || typeof source !== "object") return [];
+  const names = [];
+  const meals = Array.isArray(source.meals) ? source.meals : [];
+  for (const meal of meals) {
+    if (meal?.title) names.push(meal.title);
+    const options = Array.isArray(meal?.options) ? meal.options : [];
+    if (!options.length && meal?.detail) names.push(meal.detail);
+    for (const option of options) {
+      if (option?.title) names.push(option.title);
+      const items = Array.isArray(option?.items) ? option.items : [];
+      for (const item of items) {
+        if (item?.name) names.push(item.name);
+      }
+    }
+  }
+  return names;
+}
+
+function capMealNames(names) {
+  const cleaned = [];
+  for (const name of names || []) {
+    const tidy = tidyMealName(name);
+    if (tidy) cleaned.push(tidy);
+  }
+  const seen = new Set();
+  const newestFirst = [];
+  for (let index = cleaned.length - 1; index >= 0; index -= 1) {
+    const key = cleaned[index].toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    newestFirst.push(cleaned[index]);
+  }
+  return newestFirst.reverse().slice(-MEAL_HISTORY_LIMIT);
+}
+
+function readStoredMeals() {
+  return readArray(MEAL_HISTORY_KEY).filter((item) => typeof item === "string");
+}
+
+function writeStoredMeals(names) {
+  writeArray(MEAL_HISTORY_KEY, capMealNames(names));
+}
+
+/**
+ * Last five saved diet plans, plus the running meal list.
+ * Logged-in users read plans from Supabase. Guests read localStorage.
+ */
+export async function getPreviousMealHistory(userId) {
+  const user = currentUser();
+  const id = user?.id || (typeof userId === "string" ? userId : "");
+  let entries;
+  try {
+    if (user?.id) {
+      const rows = await getBmiRows(id || user.id);
+      entries = (rows || []).slice(0, 5).map(bmiFromRow);
+    } else {
+      entries = readArray(BMI_KEY).slice(0, 5);
+    }
+  } catch {
+    entries = user ? [] : readArray(BMI_KEY).slice(0, 5);
+  }
+  const fromPlans = [];
+  for (const entry of entries) fromPlans.push(...extractMealNames(entry?.dietPlan));
+  return capMealNames([...readStoredMeals(), ...fromPlans]);
+}
+
+/** Append meal names and keep the newest 50. */
+export function rememberMealHistory(names) {
+  const next = capMealNames([...readStoredMeals(), ...(Array.isArray(names) ? names : [])]);
+  writeStoredMeals(next);
+  return next;
 }
 
 export async function logDaily(entry) {

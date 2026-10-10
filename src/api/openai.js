@@ -342,10 +342,22 @@ function normalizeDietPlan(raw) {
  *
  * `profile` must include age, sex, activityLevel, goal, bmi, tdee,
  * calorieTarget, heightCm, and weightKg. `lang` is "ar" or "en" and is read on each call.
+ * `previousMeals` lists meals and ingredients this person already received.
  * `options.signal` cancels the request.
  * Returns a normalized plan object (not prose).
  */
-export async function getBMIAdvice(profile, lang = "ar", options = {}) {
+export async function getBMIAdvice(profile, lang = "ar", previousMeals = [], options = {}) {
+  let avoidedMeals = [];
+  let requestOptions = options;
+  if (Array.isArray(previousMeals)) {
+    avoidedMeals = previousMeals.filter((item) => typeof item === "string" && item.trim());
+  } else if (previousMeals && typeof previousMeals === "object") {
+    requestOptions = previousMeals;
+    avoidedMeals = Array.isArray(previousMeals.previousMeals)
+      ? previousMeals.previousMeals.filter((item) => typeof item === "string" && item.trim())
+      : [];
+  }
+  if (!requestOptions || typeof requestOptions !== "object") requestOptions = {};
   if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
     throw new Error("profile is required.");
   }
@@ -439,7 +451,15 @@ Rules:
 - mealsPerDay is exactly 5. meals has exactly these slots, in order: breakfast, morningSnack, lunch, afternoonSnack, dinner.
 - Each meal has exactly 3 options, id "A", "B", and "C". Options are alternatives, not foods eaten together. One option from each of the 5 meals should land near ${Math.round(calorieTarget)} kcal. Do not add every option together.
 - Each option lists every food in items with an exact grams weight and that item's calories. totalCalories is the sum of that option's item calories. preparation is one sentence on how to prepare it.
-- eatFreely is 4 foods this person can eat freely for this goal. limit is 4 foods to cut back. avoid is 4 foods to avoid completely. Do not swap these lists between weight loss and weight gain.
+- eatFreely is 4 foods this person can eat freely for this goal. limit is 4 foods to cut back. Do not swap these lists between weight loss and weight gain.
+- The avoid list must be DIRECTLY related to this user's specific health conditions and goal ONLY.
+- If the user has no health conditions, the avoid list should only contain foods that genuinely contradict their goal (for example, for weight loss: high-calorie junk food, sugary drinks, fried fast food).
+- NEVER suggest avoiding seafood unless the user specifically has a seafood allergy.
+- NEVER suggest avoiding canned food as a general rule.
+- NEVER mention alcohol, toxins, or poisonous foods. These are obvious and irrelevant.
+- NEVER suggest avoiding spicy food unless the user has a digestive condition.
+- The avoid list must be specific and practical, containing a maximum of 5 items that are genuinely relevant to THIS user's profile.
+- The foods to avoid section must only contain items that are realistic temptations for someone with this user's goal and conditions. Do not include obvious harmful substances or foods with no connection to the user's situation.
 - weeklyTips is exactly 3 short tips for varying meals across the week.
 - hydrationMl is ${waterMl}. hydrationNote explains that amount from this body weight in one or two sentences.
 - If allergies and conditions are "None reported.", set allergyNote to an empty string. Otherwise, every meal option must avoid those foods, and allergyNote must name the conditions, the foods to skip, and safe alternatives available in Saudi Arabia.
@@ -456,21 +476,35 @@ SPECIFICITY RULES:
 - Sauces, oils, and condiments are their own items, with grams or milliliters in the name and calories in the calories field (for example olive oil, 5 ml, 45 calories).
 - Drinks are their own items with a quantity (water, tea, and similar).
 - Write every name, title, preparation, and note in ${languageName}.
+- When naming meal options, NEVER label them by nationality or region. Do not write 'فطور سعودي' or 'وجبة مصرية' or 'طبق لبناني'. Just write the meal name directly, for example: 'فول بالزيت والليمون مع بيض مسلوق' instead of 'فطور سعودي تقليدي'. The meal name should describe what the food actually is.
 
 SAUDI CONTEXT:
 - Prioritize foods commonly available in Saudi supermarkets.
 - Include traditional Saudi dishes as at least one option per main meal (e.g. kabsa, shawarma, fool, tameez).
 - Avoid exotic ingredients that are hard to find locally.
 
+Be creative and surprising with your meal choices. Explore diverse cuisines including Saudi, Levantine, Egyptian, Mediterranean, and healthy international options.
+
 STRICT NO-REPETITION CHECK:
 - Before finalizing your response, review all meal options and confirm that no main protein, grain, or vegetable ingredient is repeated more than twice across all meals and options combined. If you find repetition, replace the repeated item with a different food.
 - Do NOT use standalone dashes (-- or ---) anywhere, and do not use em dashes.
-- No markdown, no headings inside strings, no extra keys.`;
+- No markdown, no headings inside strings, no extra keys.${
+    avoidedMeals.length
+      ? `
+
+CRITICAL ANTI-REPETITION RULE:
+The following meals and ingredients were suggested in previous sessions for this user.
+You are STRICTLY FORBIDDEN from suggesting any of these again:
+${avoidedMeals.join(", ")}
+If you accidentally include any of these, your response will be rejected.
+You must suggest completely new and different meals that this user has never received before.`
+      : ""
+  }`;
 
   const content = await callOpenAI(
     {
       model: "gpt-4o-mini",
-      temperature: 0.4,
+      temperature: 0.9,
       response_format: { type: "json_object" },
       messages: [
         {
@@ -480,7 +514,7 @@ STRICT NO-REPETITION CHECK:
         { role: "user", content: userPrompt },
       ],
     },
-    options,
+    requestOptions,
   );
 
   return normalizeDietPlan(parseJsonResponse(content, "diet plan"));

@@ -7,6 +7,7 @@ import {
   Copy,
   Droplets,
   Loader2,
+  RefreshCw,
   RotateCcw,
   Scale,
   Sparkles,
@@ -17,7 +18,7 @@ import Toast from "../components/Toast.jsx";
 import { getBMIAdvice } from "../api/openai.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
 import { useProfile } from "../context/ProfileContext.jsx";
-import { getBMIHistory, logBMI } from "../lib/storage.js";
+import { extractMealNames, getBMIHistory, getPreviousMealHistory, logBMI, rememberMealHistory } from "../lib/storage.js";
 import {
   ACTIVITY_LEVELS,
   calculateBMI,
@@ -459,16 +460,24 @@ function BMICalculatorForm({ profile }) {
     return `${round1(n)} ${t("common.pounds")} · ${round1(kg)} ${t("common.kilograms")}`;
   }
 
-  async function fetchAdvice(snapshot) {
+  async function fetchAdvice(snapshot, regenerateMeals) {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const keepPlan = Array.isArray(regenerateMeals);
 
     setAdviceLoading(true);
     setAdviceError("");
-    setPlan(null);
+    if (!keepPlan) setPlan(null);
 
     try {
+      let previousMeals = [];
+      try {
+        previousMeals = await getPreviousMealHistory();
+      } catch {
+        previousMeals = [];
+      }
+      if (keepPlan) previousMeals = [...previousMeals, ...regenerateMeals];
       const nextPlan = await getBMIAdvice(
         {
           bmi: snapshot.bmi,
@@ -486,9 +495,11 @@ function BMICalculatorForm({ profile }) {
           otherConditions: profile.otherConditions || "",
         },
         lang,
+        previousMeals,
         { signal: controller.signal },
       );
       setPlan(nextPlan);
+      setAdviceError("");
     } catch (err) {
       if (err?.name === "AbortError") return;
       setAdviceError(err?.message || "");
@@ -570,6 +581,12 @@ function BMICalculatorForm({ profile }) {
     if (result) fetchAdvice(result);
   }
 
+  function handleRegenerate() {
+    if (!result || adviceLoading) return;
+    setIsSaved(false);
+    fetchAdvice(result, extractMealNames(plan));
+  }
+
   async function handleCopyAdvice() {
     if (!plan || !result) return;
     try {
@@ -605,6 +622,7 @@ function BMICalculatorForm({ profile }) {
     try {
       await logBMI(entry);
       await getBMIHistory();
+      rememberMealHistory(extractMealNames(plan));
       setIsSaved(true);
       showToast(t("bmi.savedToast"), "success");
     } catch {
@@ -882,6 +900,7 @@ function BMICalculatorForm({ profile }) {
             isSaved={isSaved}
             saving={saving}
             onRetryAdvice={handleRetryAdvice}
+            onRegenerate={handleRegenerate}
             onSave={handleSave}
             onCopyAdvice={handleCopyAdvice}
           />
@@ -926,6 +945,7 @@ function ResultsSection({
   isSaved,
   saving,
   onRetryAdvice,
+  onRegenerate,
   onSave,
   onCopyAdvice,
 }) {
@@ -992,17 +1012,34 @@ function ResultsSection({
                 {t("bmi.planTitle")}
               </h2>
             </div>
-            {plan && !adviceLoading && !adviceError ? (
-              <button
-                type="button"
-                onClick={onCopyAdvice}
-                aria-label={t("bmi.copyAdvice")}
-                className="btn-press inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.08] hover:text-[var(--text-primary)]"
-              >
-                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="hidden sm:inline">{t("common.copy")}</span>
-              </button>
-            ) : null}
+            <div className="flex flex-wrap items-center justify-end gap-1">
+              {plan ? (
+                <button
+                  type="button"
+                  onClick={onRegenerate}
+                  disabled={adviceLoading}
+                  className="btn-press inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-black/[0.04] disabled:cursor-wait disabled:opacity-70 dark:hover:bg-white/[0.08]"
+                >
+                  {adviceLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  <span>{adviceLoading ? t("common.loading") : t("bmi.regenerate")}</span>
+                </button>
+              ) : null}
+              {plan && !adviceLoading && !adviceError ? (
+                <button
+                  type="button"
+                  onClick={onCopyAdvice}
+                  aria-label={t("bmi.copyAdvice")}
+                  className="btn-press inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.08] hover:text-[var(--text-primary)]"
+                >
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="hidden sm:inline">{t("common.copy")}</span>
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="mt-3 min-h-[3.5rem] text-sm leading-relaxed text-[var(--text-primary)]/90">
@@ -1014,7 +1051,7 @@ function ResultsSection({
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 {t("bmi.planLoading")}
               </div>
-            ) : adviceError ? (
+            ) : adviceError && !plan ? (
               <div className="flex flex-col items-start gap-2">
                 <p className="text-red-300/90">{adviceError || t("bmi.adviceFailed")}</p>
                 <button
@@ -1027,7 +1064,12 @@ function ResultsSection({
                 </button>
               </div>
             ) : plan ? (
-              <DietPlan plan={plan} />
+              <div className="flex flex-col gap-3">
+                {adviceError ? (
+                  <p className="text-red-300/90">{adviceError || t("bmi.adviceFailed")}</p>
+                ) : null}
+                <DietPlan plan={plan} />
+              </div>
             ) : (
               <p className="text-[var(--text-secondary)]">{t("bmi.noAdvice")}</p>
             )}
