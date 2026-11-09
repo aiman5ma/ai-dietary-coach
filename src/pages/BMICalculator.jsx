@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import BMIGauge from "../components/BMIGauge.jsx";
+import GuestAiNotice from "../components/GuestAiNotice.jsx";
 import Toast from "../components/Toast.jsx";
 import { getBMIAdvice } from "../api/openai.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
@@ -654,6 +655,8 @@ function BMICalculatorForm({ profile }) {
           {t("bmi.subtitle")}
         </p>
       </header>
+
+      <GuestAiNotice />
 
       {seeded.fromProfile ? (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/10 px-3 py-2.5 text-sm text-[var(--text-primary)]">

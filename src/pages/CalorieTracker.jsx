@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Flame, History, Loader2, Plus, Scale, Sparkles, Trash2, UtensilsCrossed, X } from "lucide-react";
 
+import GuestAiNotice from "../components/GuestAiNotice.jsx";
 import MacroBar from "../components/MacroBar.jsx";
 import MealPicker from "../components/MealPicker.jsx";
 import { MEAL_IDS, mealForNow, mealLabelKey } from "../utils/meals.js";
-import { getDailySummary } from "../api/openai.js";
+import { AI_AUTH_REQUIRED, getDailySummary, signInRequiredMessage } from "../api/openai.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useHistory } from "../context/historyContext.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
@@ -549,7 +550,7 @@ export default function CalorieTracker() {
     } catch (err) {
       if (err?.name === "AbortError" || controller.signal.aborted) return;
       setSummary(null);
-      setSummaryError("tracker.summaryError");
+      setSummaryError(err?.code === AI_AUTH_REQUIRED ? signInRequiredMessage() : "tracker.summaryError");
     } finally {
       if (!controller.signal.aborted) setSummaryLoading(false);
     }
@@ -568,6 +569,8 @@ export default function CalorieTracker() {
           {t("tracker.subtitle")}
         </p>
       </header>
+
+      <GuestAiNotice />
 
       {loadError ? (
         <p className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
@@ -858,7 +861,9 @@ export default function CalorieTracker() {
             {summaryLoading ? t("tracker.summaryLoading") : t("tracker.smartSummary")}
           </button>
           {summaryError ? (
-            <p className="mt-3 text-sm text-red-700 dark:text-red-300">{t(summaryError)}</p>
+            <p className="mt-3 whitespace-pre-line text-sm text-red-700 dark:text-red-300">
+              {summaryError.startsWith("tracker.") ? t(summaryError) : summaryError}
+            </p>
           ) : null}
           {summary ? <SummaryCard summary={summary} t={t} /> : null}
         </div>

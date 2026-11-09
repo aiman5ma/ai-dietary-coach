@@ -1,9 +1,7 @@
 import { Loader2 } from "lucide-react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
-import ApiKeySetup from "./components/ApiKeySetup.jsx";
 import Layout from "./components/Layout.jsx";
-import { isApiKeyConfigured } from "./api/openai.js";
 import { useAuth } from "./context/AuthContext.jsx";
 import { useLanguage } from "./context/LanguageContext.jsx";
 import HistoryProvider from "./context/HistoryProvider.jsx";
@@ -62,13 +60,6 @@ function AppRoutes() {
 }
 
 export default function App() {
-  // The OpenAI API key is read from import.meta.env at module-load time,
-  // so this check is effectively a one-shot guard. If the user adds a key
-  // and saves their .env, Vite will reload and re-evaluate this module.
-  if (!isApiKeyConfigured()) {
-    return <ApiKeySetup />;
-  }
-
   return (
     <BrowserRouter>
       <AppRoutes />

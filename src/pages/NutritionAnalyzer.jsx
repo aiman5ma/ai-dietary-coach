@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2, Plus, RotateCcw, X, Zap } from "lucide-react";
 
 import FoodCard from "../components/FoodCard.jsx";
+import GuestAiNotice from "../components/GuestAiNotice.jsx";
 import FoodCardSkeleton from "../components/FoodCardSkeleton.jsx";
 import MealPicker from "../components/MealPicker.jsx";
 import { mealForNow } from "../utils/meals.js";
@@ -516,6 +517,8 @@ export default function NutritionAnalyzer() {
           {t("nutrition.subtitle")}
         </p>
       </header>
+
+      <GuestAiNotice />
 
       <form onSubmit={handleSubmit} noValidate>
         <ul className="flex flex-col gap-3">

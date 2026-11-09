@@ -1,4 +1,4 @@
-// OpenAI integration for AI Dietary Coach.
+// AI features for AI Dietary Coach.
 //
 // Public API:
 //   - analyzeNutrition(foodName, weightGrams, lang, options?)
@@ -6,62 +6,65 @@
 //   - analyzePhoto(base64ImageString, mimeType, lang, options?)
 //   - getDailySummary(foodEntries, userGoal, calorieTarget, lang, options?)
 //   - chatWithNutritionist(messagesArray, lang, options?)
-//   - isApiKeyConfigured()
 //
-// All network calls use the native fetch API (no axios) and read the
-// API key from `import.meta.env.VITE_OPENAI_API_KEY`. Each function
-// accepts an optional `{ signal }` AbortSignal so callers can cancel
-// in-flight requests.
+// Requests go to the same-origin `/api/ai` function. That function holds
+// the OpenAI key and chooses the model. Each function accepts an optional
+// `{ signal }` AbortSignal so callers can cancel in-flight requests.
+// Guests have no Supabase session, so AI calls stop with a sign-in message.
 
-const CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
-const PLACEHOLDER_KEY = "your_openai_api_key_here";
+import { translations } from "../i18n/translations.js";
+import { supabase } from "../lib/supabase.js";
 
-function getApiKey() {
-  const key = import.meta.env?.VITE_OPENAI_API_KEY;
-  if (typeof key !== "string" || key.trim() === "" || key === PLACEHOLDER_KEY) {
-    throw new Error(
-      "Missing OpenAI API key. Add VITE_OPENAI_API_KEY to your .env file and restart the dev server.",
-    );
-  }
-  return key.trim();
+export const AI_AUTH_REQUIRED = "AUTH_REQUIRED";
+
+// Shown in full in toasts and inline errors, in both languages.
+export function signInRequiredMessage() {
+  const copy = translations.en.ai;
+  return `${copy.guestBodyEn}\n${copy.guestBodyAr}`;
 }
 
-/**
- * Returns true when a usable API key is present in the environment.
- * Use this to render an in-app setup screen instead of crashing.
- */
-export function isApiKeyConfigured() {
-  const key = import.meta.env?.VITE_OPENAI_API_KEY;
-  return typeof key === "string" && key.trim() !== "" && key !== PLACEHOLDER_KEY;
+function signInRequiredError() {
+  const error = new Error(signInRequiredMessage());
+  error.code = AI_AUTH_REQUIRED;
+  return error;
+}
+
+async function getAccessToken() {
+  if (!supabase) return "";
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  return typeof token === "string" ? token.trim() : "";
 }
 
 async function callOpenAI(body, { signal } = {}) {
-  const apiKey = getApiKey();
+  const accessToken = await getAccessToken();
+  if (!accessToken) throw signInRequiredError();
 
   let response;
   try {
-    response = await fetch(CHAT_COMPLETIONS_URL, {
+    response = await fetch("/api/ai", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify(body),
       signal,
     });
   } catch (err) {
     if (err?.name === "AbortError") throw err;
-    throw new Error(
-      `Network error contacting OpenAI: ${err?.message || err}`,
-      { cause: err },
-    );
+    throw new Error(`Network error contacting the AI service: ${err?.message || err}`, {
+      cause: err,
+    });
   }
+
+  if (response.status === 401) throw signInRequiredError();
 
   if (!response.ok) {
     let detail = "";
     try {
       const errBody = await response.json();
-      detail = errBody?.error?.message || JSON.stringify(errBody);
+      detail = errBody?.error?.message || "";
     } catch {
       try {
         detail = await response.text();
@@ -70,9 +73,7 @@ async function callOpenAI(body, { signal } = {}) {
       }
     }
     throw new Error(
-      `OpenAI request failed (${response.status} ${response.statusText})${
-        detail ? `: ${detail}` : ""
-      }`,
+      `AI request failed (${response.status} ${response.statusText})${detail ? `: ${detail}` : ""}`,
     );
   }
 
@@ -80,12 +81,12 @@ async function callOpenAI(body, { signal } = {}) {
   try {
     data = await response.json();
   } catch {
-    throw new Error("OpenAI returned a malformed response.");
+    throw new Error("The AI service returned a malformed response.");
   }
 
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.length === 0) {
-    throw new Error("OpenAI response was empty.");
+    throw new Error("The AI service response was empty.");
   }
   return content;
 }
@@ -154,7 +155,7 @@ ${jsonTextLanguageLine(lang)}`;
 
   const content = await callOpenAI(
     {
-      model: "gpt-4o-mini",
+      kind: "text",
       temperature: 0.3,
       response_format: { type: "json_object" },
       messages: [
@@ -503,7 +504,7 @@ You must suggest completely new and different meals that this user has never rec
 
   const content = await callOpenAI(
     {
-      model: "gpt-4o-mini",
+      kind: "text",
       temperature: 0.9,
       response_format: { type: "json_object" },
       messages: [
@@ -556,7 +557,7 @@ ${jsonTextLanguageLine(lang)}`;
 
   const content = await callOpenAI(
     {
-      model: "gpt-4o",
+      kind: "image",
       temperature: 0.3,
       response_format: { type: "json_object" },
       messages: [
@@ -695,7 +696,7 @@ Rules:
 
   const content = await callOpenAI(
     {
-      model: "gpt-4o-mini",
+      kind: "text",
       temperature: 0.5,
       response_format: { type: "json_object" },
       messages: [
@@ -752,14 +753,14 @@ export async function chatWithNutritionist(messagesArray, lang = "ar", options =
     throw new Error("messagesArray must contain at least one user message.");
   }
 
+  // The server accepts at most 20 messages, including this system prompt.
+  const recent = cleaned.slice(-19);
+
   const content = await callOpenAI(
     {
-      model: "gpt-4o-mini",
+      kind: "text",
       temperature: 0.7,
-      messages: [
-        { role: "system", content: coachSystemPrompt(lang) },
-        ...cleaned,
-      ],
+      messages: [{ role: "system", content: coachSystemPrompt(lang) }, ...recent],
     },
     options,
   );

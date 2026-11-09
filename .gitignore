@@ -12,10 +12,8 @@ dist
 dist-ssr
 *.local
 
-# Environment
-.env
-.env.local
-.env.*.local
+# Environment — never commit secrets. .env.example is the only exception.
+.env*
 !.env.example
 
 # Editor directories and files

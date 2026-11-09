@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import FoodCard from "../components/FoodCard.jsx";
+import GuestAiNotice from "../components/GuestAiNotice.jsx";
 import FoodCardSkeleton from "../components/FoodCardSkeleton.jsx";
 import { mealForNow } from "../utils/meals.js";
 import Toast from "../components/Toast.jsx";
@@ -20,7 +21,7 @@ import { useLanguage } from "../context/LanguageContext.jsx";
 import { getFoods, logDaily, logFood } from "../lib/storage.js";
 import { generateId } from "../utils/bmi.js";
 
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_BYTES = 2.5 * 1024 * 1024; // stays under the server image limit once base64-encoded
 
 function withTimestamp(fields) {
   return { ...fields, date: Date.now() };
@@ -279,6 +280,8 @@ export default function PhotoScanner() {
           {t("scanner.subtitle")}
         </p>
       </header>
+
+      <GuestAiNotice />
 
       <input
         ref={fileInputRef}

@@ -295,7 +295,7 @@ const en = {
     analyzing: "AI is analyzing your food...",
     scan: "Scan Food",
     dropTitle: "Drop a photo here",
-    dropHint: "or pick one from your device — PNG or JPG, up to 5 MB.",
+    dropHint: "or pick one from your device — PNG or JPG, up to 2.5 MB.",
     choosePhoto: "Choose Photo",
     takePhoto: "Take Photo",
     bestResults:
@@ -307,7 +307,7 @@ const en = {
     identifying: "Identifying food and estimating nutrition…",
     serving: "1 serving",
     notImage: "That doesn't look like an image. Please choose a photo.",
-    tooLarge: "That image is {size} — please choose one under 5 MB.",
+    tooLarge: "That image is {size} — please choose one under 2.5 MB.",
     readFailed: "Could not read that image.",
     encodeFailed: "Could not encode image as base64.",
     readFileFailed: "Could not read the image file.",
@@ -385,31 +385,18 @@ const en = {
     summaryLoading: "Analyzing today's meals…",
     summaryError: "Couldn't analyze today's meals. Please try again.",
   },
-  setup: {
-    title: "Set up your OpenAI API key",
-    intro:
-      "AI Dietary Coach uses the OpenAI API for nutrition analysis, photo scanning, BMI advice, and chat with Coach Nova. To get started, add your personal API key to a local .env file.",
-    step1Title: "Get a key from OpenAI",
-    step1Body: "Sign in to your OpenAI account and create a new secret key.",
-    step1Link: "Open platform.openai.com/api-keys",
-    step2Title: "Create .env from the example",
-    terminal: "terminal",
-    step3Title: "Paste your key",
-    step3Body: "Open the new .env and replace the placeholder:",
-    step4Title: "Restart the dev server",
-    step4Body:
-      "Vite only reads .env at startup, so stop and re-run npm run dev to pick up the new key.",
-    headsUp: "Heads up:",
-    headsUpBody:
-      "this app calls OpenAI directly from the browser, which means the key is bundled into the client. It's perfect for personal use and demos — for production, proxy requests through a server you control.",
-    footer: "Once your key is in place, refresh this page to start coaching.",
+  ai: {
+    guestTitle: "Sign in to use AI",
+    guestBodyEn:
+      "Please sign in to use nutrition analysis, photo scanning, meal plans, chat, and daily summaries.",
+    guestBodyAr:
+      "يرجى تسجيل الدخول لاستخدام تحليل التغذية ومسح الصور وخطط الوجبات والمحادثة والملخص اليومي.",
+    guestSignIn: "Sign in",
   },
   errors: {
-    missingKey:
-      "Missing OpenAI API key. Add VITE_OPENAI_API_KEY to your .env file and restart the dev server.",
-    network: "Network error contacting OpenAI: {message}",
-    malformed: "OpenAI returned a malformed response.",
-    empty: "OpenAI response was empty.",
+    network: "Network error contacting the AI service: {message}",
+    malformed: "The AI service returned a malformed response.",
+    empty: "The AI service response was empty.",
     parse: "Could not parse {label} response as JSON. Raw output: {output}",
   },
 };
@@ -701,7 +688,7 @@ const ar = {
     analyzing: "الذكاء الاصطناعي يحلّل طعامك...",
     scan: "امسح الطعام",
     dropTitle: "ضع الصورة هنا",
-    dropHint: "أو اختر واحدة من جهازك — PNG أو JPG، بحد أقصى 5 ميغابايت.",
+    dropHint: "أو اختر واحدة من جهازك — PNG أو JPG، بحد أقصى 2.5 ميغابايت.",
     choosePhoto: "اختيار صورة",
     takePhoto: "التقاط صورة",
     bestResults: "أفضل النتائج مع صور واضحة لطعام واحد أو لمنتجات معبأة.",
@@ -712,7 +699,7 @@ const ar = {
     identifying: "جارٍ التعرّف على الطعام وتقدير القيم الغذائية…",
     serving: "حصة واحدة",
     notImage: "لا يبدو هذا ملف صورة. يرجى اختيار صورة.",
-    tooLarge: "حجم هذه الصورة {size} — يرجى اختيار صورة أقل من 5 ميغابايت.",
+    tooLarge: "حجم هذه الصورة {size} — يرجى اختيار صورة أقل من 2.5 ميغابايت.",
     readFailed: "تعذر قراءة هذه الصورة.",
     encodeFailed: "تعذر ترميز الصورة بصيغة base64.",
     readFileFailed: "تعذر قراءة ملف الصورة.",
@@ -790,31 +777,18 @@ const ar = {
     summaryLoading: "جارٍ تحليل وجبات اليوم…",
     summaryError: "تعذر تحليل وجبات اليوم. يرجى المحاولة مرة أخرى.",
   },
-  setup: {
-    title: "إعداد مفتاح OpenAI",
-    intro:
-      "يستخدم المدرب الغذائي الذكي واجهة OpenAI لتحليل التغذية ومسح الصور ونصائح مؤشر الكتلة والمحادثة مع المدربة نوفا. للبدء، أضف مفتاحك الشخصي إلى ملف .env محلي.",
-    step1Title: "احصل على مفتاح من OpenAI",
-    step1Body: "سجّل الدخول إلى حساب OpenAI وأنشئ مفتاحًا سريًا جديدًا.",
-    step1Link: "افتح platform.openai.com/api-keys",
-    step2Title: "أنشئ ملف .env من المثال",
-    terminal: "الطرفية",
-    step3Title: "الصق مفتاحك",
-    step3Body: "افتح ملف .env الجديد واستبدل النص المؤقت:",
-    step4Title: "أعد تشغيل خادم التطوير",
-    step4Body:
-      "يقرأ Vite ملف .env عند التشغيل فقط، لذا أوقف الأمر npm run dev ثم أعد تشغيله ليُلتقط المفتاح.",
-    headsUp: "تنبيه:",
-    headsUpBody:
-      "يتصل هذا التطبيق بـ OpenAI مباشرة من المتصفح، لذا يُضمَّن المفتاح في الواجهة. هذا مناسب للاستخدام الشخصي والعروض — وللإنتاج، مرّر الطلبات عبر خادم تتحكم به.",
-    footer: "بعد وضع المفتاح، حدّث هذه الصفحة لبدء التدريب.",
+  ai: {
+    guestTitle: "سجّل الدخول لاستخدام الذكاء الاصطناعي",
+    guestBodyEn:
+      "Please sign in to use nutrition analysis, photo scanning, meal plans, chat, and daily summaries.",
+    guestBodyAr:
+      "يرجى تسجيل الدخول لاستخدام تحليل التغذية ومسح الصور وخطط الوجبات والمحادثة والملخص اليومي.",
+    guestSignIn: "تسجيل الدخول",
   },
   errors: {
-    missingKey:
-      "مفتاح OpenAI غير موجود. أضف VITE_OPENAI_API_KEY إلى ملف .env ثم أعد تشغيل خادم التطوير.",
-    network: "خطأ في الشبكة أثناء الاتصال بـ OpenAI: {message}",
-    malformed: "أعاد OpenAI استجابة غير صالحة.",
-    empty: "استجابة OpenAI كانت فارغة.",
+    network: "خطأ في الشبكة أثناء الاتصال بخدمة الذكاء الاصطناعي: {message}",
+    malformed: "أعادت خدمة الذكاء الاصطناعي استجابة غير صالحة.",
+    empty: "استجابة خدمة الذكاء الاصطناعي كانت فارغة.",
     parse: "تعذر تحليل استجابة {label} كـ JSON. المخرجات: {output}",
   },
 };

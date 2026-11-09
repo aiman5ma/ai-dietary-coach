@@ -3,7 +3,7 @@
 A modern, AI-powered nutrition coach in the browser. Look up macros for any
 food, scan a photo of your plate, calculate your BMI with personalized
 guidance, and chat with **Coach Nova** — all from one polished dark-mode app
-that runs entirely on the OpenAI API.
+that calls OpenAI through a server function, so the API key never reaches the browser.
 
 > **Screenshot placeholder** — drop a `docs/screenshot.png` here and replace
 > this paragraph with `![AI Dietary Coach](./docs/screenshot.png)`.
@@ -37,7 +37,7 @@ shared **History** drawer that's accessible from every page.
 | Build tool       | [Vite](https://vitejs.dev)        | 8.x      |
 | Styling          | [Tailwind CSS](https://tailwindcss.com) | 4.x  |
 | Icons            | [lucide-react](https://lucide.dev) | 1.x     |
-| AI               | OpenAI (`gpt-4o`, `gpt-4o-mini`)  | API      |
+| AI               | OpenAI via `/api/ai` (`gpt-4o`, `gpt-4o-mini`) | Server |
 | Lint             | ESLint + react-hooks + react-refresh | 10.x  |
 
 ---
@@ -54,7 +54,8 @@ npm install
 
 # 3. Create your local .env
 cp .env.example .env
-#    then open .env and paste your OpenAI API key
+#    then set OPENAI_API_KEY, SUPABASE_URL, and SUPABASE_ANON_KEY
+#    Do not prefix the OpenAI key with VITE_
 
 # 4. Run the dev server
 npm run dev
@@ -62,8 +63,8 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-If `VITE_OPENAI_API_KEY` is missing, the app shows a full-page setup screen
-with step-by-step instructions instead of crashing.
+`npm run dev` serves `POST /api/ai` locally. On Vercel that same file is a
+serverless function. The OpenAI key stays in `OPENAI_API_KEY`.
 
 ### Useful scripts
 
@@ -84,9 +85,9 @@ ai-dietary-coach/
 │   └── favicon.svg              # 🥗 emoji favicon
 ├── src/
 │   ├── api/
-│   │   └── openai.js            # All OpenAI API calls (analyze, photo, chat, BMI advice)
+│   │   └── openai.js            # Browser calls to /api/ai (analyze, photo, chat, BMI advice)
 │   ├── components/
-│   │   ├── ApiKeySetup.jsx      # Full-page screen shown when the API key is missing
+│   │   ├── GuestAiNotice.jsx    # Asks guests to sign in before using AI
 │   │   ├── BMIGauge.jsx         # Animated SVG BMI gauge
 │   │   ├── ChatMessage.jsx      # User / Coach Nova chat bubble
 │   │   ├── FoodCard.jsx         # Nutrition result card (with count-up numbers)
@@ -109,10 +110,12 @@ ai-dietary-coach/
 │   │   └── PhotoScanner.jsx     # /scanner
 │   ├── utils/
 │   │   └── bmi.js               # BMI math, unit conversions, generateId
-│   ├── App.jsx                  # Routes + API key guard + history provider
+│   ├── App.jsx                  # Routes + history provider
 │   ├── index.css                # Theme tokens, animations, focus glow, btn-press
 │   └── main.jsx                 # React entry
-├── .env.example                 # Copy to .env and add your OpenAI key
+├── api/
+│   └── ai.js                    # Vercel function: auth, limits, OpenAI proxy
+├── .env.example                 # Copy to .env. Server key is not prefixed with VITE_
 ├── eslint.config.js
 ├── index.html
 ├── package.json
@@ -126,19 +129,22 @@ ai-dietary-coach/
 1. Go to [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
    and sign in (or create an account).
 2. Click **"Create new secret key"**, give it a name like
-   `ai-dietary-coach-local`, and copy the value — it starts with `sk-…`.
-3. Paste it into your `.env` file:
+   `ai-dietary-coach`, and copy the value.
+3. Put it in `.env` for local development, and in the Vercel project
+   environment variables for production:
 
    ```dotenv
-   VITE_OPENAI_API_KEY=sk-...your-key-here...
+   OPENAI_API_KEY=your_openai_api_key_here
+   SUPABASE_URL=https://your-project-ref.supabase.co
+   SUPABASE_ANON_KEY=your_supabase_anon_key_here
    ```
 
-4. Stop and restart `npm run dev` — Vite only reads `.env` at startup.
+4. Stop and restart `npm run dev` — the dev server reads `.env` at startup.
 
-> **Important:** this app calls OpenAI directly from the browser, which
-> means the key is bundled into the client. That's perfect for personal
-> use and demos. For anything public-facing, proxy requests through a
-> server you control so the key never ships to users.
+The browser only receives `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+AI requests go to `/api/ai`, which checks the Supabase access token and
+then calls OpenAI. Guest mode can browse the app, but AI features ask the
+guest to sign in.
 
 ---
 
@@ -164,5 +170,5 @@ The app intentionally uses cheap models everywhere it can.
 
 ## License
 
-MIT — do whatever you like with this code, but the OpenAI key in your
-`.env` is your responsibility.
+MIT — do whatever you like with this code. Keep `OPENAI_API_KEY` on the
+server. Do not commit a real `.env`.
