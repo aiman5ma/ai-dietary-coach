@@ -475,7 +475,8 @@ function BMICalculatorForm({ profile }) {
       let previousMeals = [];
       try {
         previousMeals = await getPreviousMealHistory();
-      } catch {
+      } catch (error) {
+        console.error("[meals] history:", error?.message || error, error);
         previousMeals = [];
       }
       if (keepPlan) previousMeals = [...previousMeals, ...regenerateMeals];

@@ -408,7 +408,8 @@ export async function getPreviousMealHistory(userId) {
     } else {
       entries = readArray(BMI_KEY).slice(0, 5);
     }
-  } catch {
+  } catch (error) {
+    console.error("[supabase] getPreviousMealHistory:", error?.message || error, error);
     entries = user ? [] : readArray(BMI_KEY).slice(0, 5);
   }
   const fromPlans = [];
@@ -562,7 +563,10 @@ export async function clearFoods() {
   }
   if (!supabase) return [];
   const { error } = await supabase.from("food_log").delete().eq("user_id", user.id);
-  if (error) throw error;
+  if (error) {
+    console.error("[supabase] clearFoods:", error.message || error, error);
+    throw error;
+  }
   dispatch(FOOD_EVENT);
   return [];
 }
@@ -576,7 +580,10 @@ export async function clearBmiHistory() {
   }
   if (!supabase) return [];
   const { error } = await supabase.from("bmi_history").delete().eq("user_id", user.id);
-  if (error) throw error;
+  if (error) {
+    console.error("[supabase] clearBmiHistory:", error.message || error, error);
+    throw error;
+  }
   dispatch(BMI_EVENT);
   return [];
 }

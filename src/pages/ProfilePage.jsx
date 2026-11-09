@@ -278,7 +278,8 @@ function ProfileForm({ initial, onSave }) {
     try {
       await onSave(canonicalFromForm(form));
       setToast({ visible: true, message: t("profile.saved"), type: "success" });
-    } catch {
+    } catch (error) {
+      console.error("[profile] save:", error?.message || error, error);
       setErrorKey("profile.saveFailed");
     } finally {
       setSaving(false);
@@ -527,7 +528,8 @@ export default function ProfilePage() {
         if (!active) return;
         setProfile(next);
         replaceProfile(next);
-      } catch {
+      } catch (error) {
+        console.error("[profile] load:", error?.message || error, error);
         if (active) setError("storage.loadFailed");
       } finally {
         if (active) setLoading(false);

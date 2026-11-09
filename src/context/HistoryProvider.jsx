@@ -50,7 +50,8 @@ export default function HistoryProvider({ children }) {
       setHistoryError("");
       try {
         await reload();
-      } catch {
+      } catch (error) {
+        console.error("[history] load:", error?.message || error, error);
         if (active) setHistoryError("storage.loadFailed");
       } finally {
         if (active) setHistoryLoading(false);

@@ -366,7 +366,8 @@ export default function CalorieTracker() {
         setEntries(Array.isArray(daily) ? daily : []);
         setTarget(targetFromHistory(history));
         setLoadError("");
-      } catch {
+      } catch (error) {
+        console.error("[tracker] load:", error?.message || error, error);
         if (!active) return;
         setLoadError("storage.loadFailed");
         if (!user) {
@@ -444,7 +445,8 @@ export default function CalorieTracker() {
       );
       setEntries((current) => applyDailyResult(current, next));
       clearSummary();
-    } catch {
+    } catch (error) {
+      console.error("[tracker] save:", error?.message || error, error);
       setLoadError("storage.saveFailed");
     } finally {
       setSavingEntry(false);
@@ -499,7 +501,8 @@ export default function CalorieTracker() {
       resetDraft(draft.meal);
       setShowForm(false);
       clearSummary();
-    } catch {
+    } catch (error) {
+      console.error("[tracker] save:", error?.message || error, error);
       setLoadError("storage.saveFailed");
     } finally {
       setSavingEntry(false);
@@ -513,7 +516,8 @@ export default function CalorieTracker() {
       if (Array.isArray(next)) setEntries(next);
       else setEntries((current) => current.filter((entry) => entry?.id !== id));
       clearSummary();
-    } catch {
+    } catch (error) {
+      console.error("[tracker] save:", error?.message || error, error);
       setLoadError("storage.saveFailed");
     }
   }
@@ -525,7 +529,8 @@ export default function CalorieTracker() {
       setEntries(Array.isArray(next) ? next : []);
       setConfirmingClear(false);
       clearSummary();
-    } catch {
+    } catch (error) {
+      console.error("[tracker] save:", error?.message || error, error);
       setLoadError("storage.saveFailed");
     }
   }

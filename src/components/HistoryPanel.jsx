@@ -155,7 +155,8 @@ export default function HistoryPanel({
         if (!active) return;
         setFreshFood(foods);
         setFreshBmi(bmi);
-      } catch {
+      } catch (error) {
+        console.error("[history] load:", error?.message || error, error);
         if (active) setError("storage.loadFailed");
       } finally {
         if (active) setLoading(false);
@@ -176,7 +177,8 @@ export default function HistoryPanel({
       const [foods, bmi] = await Promise.all([getFoods(), getBMIHistory()]);
       setFreshFood(foods);
       setFreshBmi(bmi);
-    } catch {
+    } catch (error) {
+      console.error("[history] clear:", error?.message || error, error);
       setError("storage.saveFailed");
     }
   }

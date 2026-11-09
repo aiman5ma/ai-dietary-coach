@@ -105,7 +105,8 @@ export function ProfileProvider({ children }) {
       if (user || isGuest) {
         try {
           next = normalizeProfile(await readProfile(), user);
-        } catch {
+        } catch (error) {
+          console.error("[profile] load:", error?.message || error, error);
           next = normalizeProfile(null, user);
         }
       }
