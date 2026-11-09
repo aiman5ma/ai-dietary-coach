@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 
 import ChatMessage from "../components/ChatMessage.jsx";
-import GuestAiNotice from "../components/GuestAiNotice.jsx";
 import { chatWithNutritionist } from "../api/openai.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
 import { generateId } from "../utils/bmi.js";
@@ -305,9 +304,7 @@ export default function NutritionChat() {
     messages[messages.length - 1].role === "system";
 
   return (
-    <div className="flex min-h-0 flex-col">
-      <GuestAiNotice />
-      <section
+    <section
       aria-label={t("chat.region")}
       className="flex h-[calc(100dvh-252px)] min-h-[420px] flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] backdrop-blur-md shadow-[0_8px_30px_rgba(0,0,0,0.25)] dark:border-[rgba(255,255,255,0.08)] dark:bg-[rgba(22,27,34,0.95)] dark:text-[#f0f6fc] dark:shadow-[0_8px_30px_rgba(0,0,0,0.55)] md:h-[calc(100dvh-136px)]"
     >
@@ -442,7 +439,6 @@ export default function NutritionChat() {
           {lastIsError ? t("chat.retryHint") : t("chat.sendHint")}
         </p>
       </form>
-      </section>
-    </div>
+    </section>
   );
 }

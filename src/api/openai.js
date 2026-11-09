@@ -10,7 +10,8 @@
 // Requests go to the same-origin `/api/ai` function. That function holds
 // the OpenAI key and chooses the model. Each function accepts an optional
 // `{ signal }` AbortSignal so callers can cancel in-flight requests.
-// Guests have no Supabase session, so AI calls stop with a sign-in message.
+// Analyzer, BMI, photos, and the daily summary still require a signed-in
+// session. Coach Nova chat does not.
 
 import { translations } from "../i18n/translations.js";
 import { supabase } from "../lib/supabase.js";
@@ -36,18 +37,19 @@ async function getAccessToken() {
   return typeof token === "string" ? token.trim() : "";
 }
 
-async function callOpenAI(body, { signal } = {}) {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw signInRequiredError();
+async function callOpenAI(body, { signal, requireAuth = true } = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (requireAuth) {
+    const accessToken = await getAccessToken();
+    if (!accessToken) throw signInRequiredError();
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
 
   let response;
   try {
     response = await fetch("/api/ai", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers,
       body: JSON.stringify(body),
       signal,
     });
@@ -58,7 +60,7 @@ async function callOpenAI(body, { signal } = {}) {
     });
   }
 
-  if (response.status === 401) throw signInRequiredError();
+  if (requireAuth && response.status === 401) throw signInRequiredError();
 
   if (!response.ok) {
     let detail = "";
@@ -717,30 +719,13 @@ Rules:
 // 5) Chat with Coach Nova
 // ─────────────────────────────────────────────────────────────────────────────
 
-function coachSystemPrompt(lang) {
-  const persona =
-    normalizeLang(lang) === "en"
-      ? "You are Coach Nova, a professional nutrition coach. Always respond in English. Never use standalone dashes (-- or ---) in your responses."
-      : "أنتِ Coach Nova، مدربة تغذية محترفة. تتحدثين دائماً بالعربية الفصحى السهلة. لا تستخدمي شرطات مزدوجة (-- أو ---) في ردودك.";
-
-  return `${languageDirective(lang)}
-${persona}
-
-Format every reply with proper markdown:
-- Use ## for headings
-- Use - for bullet points
-- Use **bold** for emphasis
-- Put a blank line between sections
-
-Never use standalone dashes (-- or ---) as separators or decorative elements. Never use em-dashes or double-hyphens as section dividers.`;
-}
-
 export async function chatWithNutritionist(messagesArray, lang = "ar", options = {}) {
+  void lang;
   if (!Array.isArray(messagesArray)) {
     throw new Error("messagesArray must be an array of {role, content} messages.");
   }
 
-  // Defensively keep only valid user/assistant turns; our system prompt always wins.
+  // The server owns Coach Nova's system prompt. Send only the conversation.
   const cleaned = messagesArray.filter(
     (m) =>
       m &&
@@ -753,16 +738,16 @@ export async function chatWithNutritionist(messagesArray, lang = "ar", options =
     throw new Error("messagesArray must contain at least one user message.");
   }
 
-  // The server accepts at most 20 messages, including this system prompt.
-  const recent = cleaned.slice(-19);
+  const recent = cleaned.slice(-30);
 
   const content = await callOpenAI(
     {
-      kind: "text",
+      kind: "chat",
+      model: "gpt-4o-mini",
       temperature: 0.7,
-      messages: [{ role: "system", content: coachSystemPrompt(lang) }, ...recent],
+      messages: recent,
     },
-    options,
+    { ...options, requireAuth: false },
   );
 
   return content.trim();
