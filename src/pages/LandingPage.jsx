@@ -232,10 +232,7 @@ export default function LandingPage() {
             aria-hidden="true"
           />
         </span>
-        <p className="mt-5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)] rtl:normal-case rtl:tracking-normal">
-          {t("app.tagline")}
-        </p>
-        <h1 className="mt-1 text-center font-sans text-2xl font-bold leading-snug text-[var(--text-primary)] sm:text-3xl">
+        <h1 className="mt-5 text-center font-sans text-2xl font-bold leading-snug text-[var(--text-primary)] sm:text-3xl">
           {t("app.name")}
         </h1>
         <p className="mt-2 text-center text-sm text-[var(--text-secondary)] sm:text-base">

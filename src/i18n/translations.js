@@ -10,10 +10,10 @@
 
 const en = {
   app: {
-    name: "AI Dietary Coach",
-    tagline: "AI Coach",
+    name: "AI DIETARY COACH",
+    tagline: "AI DIETARY COACH",
     description:
-      "AI Dietary Coach — analyze nutrition, calculate BMI, scan food photos, and chat with Coach Nova.",
+      "AI DIETARY COACH — analyze nutrition, calculate BMI, scan food photos, and chat with Coach Nova.",
   },
   language: {
     english: "English",
@@ -71,7 +71,6 @@ const en = {
     authUnavailable: "Sign-in is not available yet. You can continue as a guest.",
   },
   profile: {
-    eyebrow: "Profile",
     title: "Your profile",
     subtitle: "Add your details so suggestions can fit your life.",
     personal: "Personal Info",
@@ -148,7 +147,6 @@ const en = {
     saveFailed: "Could not save. Please try again.",
   },
   nutrition: {
-    eyebrow: "Nutrition",
     title: "Nutrition Analyzer",
     subtitle: "Enter any food to get instant nutritional insights.",
     foodName: "Food name",
@@ -186,7 +184,6 @@ const en = {
     loadingCard: "Loading nutrition information",
   },
   bmi: {
-    eyebrow: "Health",
     title: "BMI Calculator",
     subtitle: "Know your body, get personalized guidance.",
     height: "Height",
@@ -283,10 +280,11 @@ const en = {
     morningSnack: "Morning Snack",
     afternoonSnack: "Afternoon Snack",
     allergyNote: "Because of your conditions",
+    allergens: "Allergens",
+    noAllergens: "None",
     saveFailed: "Could not save your BMI history. Please try again.",
   },
   scanner: {
-    eyebrow: "Vision",
     title: "Food Scanner",
     subtitle: "Snap a photo — AI identifies it and gives full nutrition info.",
     selectedAlt: "Selected food",
@@ -320,7 +318,7 @@ const en = {
     region: "Coach Nova chat",
     name: "Coach Nova",
     online: "Online",
-    role: "AI Nutritionist",
+    role: "smart assistant",
     clearPrompt: "Clear chat?",
     cancel: "Cancel",
     confirmClear: "Yes, clear",
@@ -340,7 +338,6 @@ const en = {
     unreachable: "I couldn't reach the kitchen just now. Please try again.",
   },
   tracker: {
-    eyebrow: "Today",
     title: "Calorie Tracker",
     subtitle: "See how today's meals add up against your daily goal.",
     goalTitle: "Daily Goal Progress",
@@ -385,14 +382,6 @@ const en = {
     summaryLoading: "Analyzing today's meals…",
     summaryError: "Couldn't analyze today's meals. Please try again.",
   },
-  ai: {
-    guestTitle: "Sign in to use AI",
-    guestBodyEn:
-      "Please sign in to use nutrition analysis, photo scanning, meal plans, chat, and daily summaries.",
-    guestBodyAr:
-      "يرجى تسجيل الدخول لاستخدام تحليل التغذية ومسح الصور وخطط الوجبات والمحادثة والملخص اليومي.",
-    guestSignIn: "Sign in",
-  },
   errors: {
     network: "Network error contacting the AI service: {message}",
     malformed: "The AI service returned a malformed response.",
@@ -403,10 +392,10 @@ const en = {
 
 const ar = {
   app: {
-    name: "المدرب الغذائي الذكي",
-    tagline: "المدرب الذكي",
+    name: "AI DIETARY COACH",
+    tagline: "AI DIETARY COACH",
     description:
-      "المدرب الغذائي الذكي — حلّل التغذية، واحسب مؤشر كتلة الجسم، وامسح صور الطعام، وتحدّث مع المدربة نوفا.",
+      "AI DIETARY COACH — حلّل التغذية، واحسب مؤشر كتلة الجسم، وامسح صور الطعام، وتحدّث مع المدرب نوفا.",
   },
   language: {
     english: "English",
@@ -427,7 +416,7 @@ const ar = {
     tracker: "تتبع السعرات",
     poweredBy: "مدعوم من",
     sidebarAction: "تتبّع المغذيات الكبرى، امسح وجباتك، وتحدّث مع",
-    coachName: "المدربة نوفا",
+    coachName: "المدرب نوفا",
     logout: "تسجيل الخروج",
     exit: "خروج",
     profile: "الملف الشخصي",
@@ -464,7 +453,6 @@ const ar = {
     authUnavailable: "تسجيل الدخول غير متاح حاليًا. يمكنك المتابعة كضيف.",
   },
   profile: {
-    eyebrow: "الملف",
     title: "ملفك الشخصي",
     subtitle: "أضف بياناتك لتناسبك الاقتراحات الغذائية.",
     personal: "المعلومات الشخصية",
@@ -541,7 +529,6 @@ const ar = {
     saveFailed: "تعذر الحفظ. يرجى المحاولة مرة أخرى.",
   },
   nutrition: {
-    eyebrow: "التغذية",
     title: "محلل التغذية",
     subtitle: "أدخل أي طعام لتحصل فورًا على معلوماته الغذائية.",
     foodName: "اسم الطعام",
@@ -579,7 +566,6 @@ const ar = {
     loadingCard: "جارٍ تحميل المعلومات الغذائية",
   },
   bmi: {
-    eyebrow: "الصحة",
     title: "حاسبة مؤشر كتلة الجسم",
     subtitle: "تعرّف على جسمك واحصل على إرشاد مخصص.",
     height: "الطول",
@@ -593,7 +579,7 @@ const ar = {
     weightRequired: "يرجى إدخال وزن صحيح.",
     adviceTitle: "نصيحة مخصصة",
     copyAdvice: "نسخ النصيحة",
-    thinking: "المدربة نوفا تفكّر...",
+    thinking: "المدرب نوفا يفكّر...",
     adviceFailed: "تعذر تحميل النصيحة المخصصة.",
     noAdvice: "لا توجد نصيحة بعد.",
     savedToast: "تم الحفظ في سجل مؤشر الكتلة",
@@ -676,10 +662,11 @@ const ar = {
     morningSnack: "سناك الصباح",
     afternoonSnack: "سناك بعد الظهر",
     allergyNote: "بسبب حالاتك",
+    allergens: "مسببات الحساسية",
+    noAllergens: "لا يوجد",
     saveFailed: "تعذر حفظ سجل مؤشر الكتلة. يرجى المحاولة مرة أخرى.",
   },
   scanner: {
-    eyebrow: "الرؤية",
     title: "ماسح الطعام",
     subtitle: "التقط صورة — يتعرّف الذكاء الاصطناعي عليها ويعرض معلوماتها الغذائية كاملة.",
     selectedAlt: "الطعام المحدد",
@@ -709,30 +696,29 @@ const ar = {
     tip: "نصيحة: الصور الملتقطة بإضاءة جيدة والطعام في المنتصف تعطي أدق تقدير للسعرات والمغذيات.",
   },
   chat: {
-    region: "محادثة المدربة نوفا",
-    name: "المدربة نوفا",
-    online: "متصلة",
-    role: "أخصائية تغذية بالذكاء الاصطناعي",
+    region: "محادثة المدرب نوفا",
+    name: "المدرب نوفا",
+    online: "متصل",
+    role: "مساعد ذكي",
     clearPrompt: "مسح المحادثة؟",
     cancel: "إلغاء",
     confirmClear: "نعم، امسح",
     clear: "مسح المحادثة",
-    greeting: "مرحبًا! أنا المدربة نوفا",
+    greeting: "مرحبًا! أنا المدرب نوفا",
     intro:
-      "مدربتك الغذائية. اسألني عن الطعام أو الحميات أو المغذيات الكبرى أو تخطيط الوجبات أو العادات الصحية!",
+      "مدربك الغذائي. اسألني عن الطعام أو الحميات أو المغذيات الكبرى أو تخطيط الوجبات أو العادات الصحية!",
     suggestionProtein: "ما أفضل مصدر بروتين لبناء العضلات؟",
     suggestionCalories: "كم سعرة يجب أن أتناول لخسارة الوزن؟",
     suggestionFasting: "هل الصيام المتقطع فعال؟",
     suggestionFiber: "ما الأطعمة الغنية بالألياف؟",
-    inputLabel: "راسل المدربة نوفا",
-    placeholder: "اسأل المدربة نوفا عن أي شيء...",
+    inputLabel: "راسل المدرب نوفا",
+    placeholder: "اسأل المدرب نوفا عن أي شيء...",
     send: "إرسال الرسالة",
     retryHint: "اضغط Enter لإعادة المحاولة، أو عدّل السؤال وأرسله.",
     sendHint: "Enter للإرسال · Shift + Enter لسطر جديد",
     unreachable: "لم أستطع الوصول الآن. يرجى المحاولة مرة أخرى.",
   },
   tracker: {
-    eyebrow: "اليوم",
     title: "تتبع السعرات",
     subtitle: "شاهد كيف تتجمع وجبات اليوم مقابل هدفك اليومي.",
     goalTitle: "تقدم الهدف اليومي",
@@ -776,14 +762,6 @@ const ar = {
     summaryNext: "الوجبة التالية",
     summaryLoading: "جارٍ تحليل وجبات اليوم…",
     summaryError: "تعذر تحليل وجبات اليوم. يرجى المحاولة مرة أخرى.",
-  },
-  ai: {
-    guestTitle: "سجّل الدخول لاستخدام الذكاء الاصطناعي",
-    guestBodyEn:
-      "Please sign in to use nutrition analysis, photo scanning, meal plans, chat, and daily summaries.",
-    guestBodyAr:
-      "يرجى تسجيل الدخول لاستخدام تحليل التغذية ومسح الصور وخطط الوجبات والمحادثة والملخص اليومي.",
-    guestSignIn: "تسجيل الدخول",
   },
   errors: {
     network: "خطأ في الشبكة أثناء الاتصال بخدمة الذكاء الاصطناعي: {message}",

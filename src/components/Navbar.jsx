@@ -59,9 +59,6 @@ function Logo() {
         <Leaf className="h-[18px] w-[18px] text-[var(--accent-green)]" strokeWidth={2.25} />
       </span>
       <div className="min-w-0 leading-tight text-left rtl:text-right">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)] rtl:normal-case rtl:tracking-normal">
-          {t("app.tagline")}
-        </p>
         <h1 className="font-sans text-[15px] font-bold leading-snug text-[var(--text-primary)]">
           {t("app.name")}
         </h1>

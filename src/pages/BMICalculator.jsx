@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 
 import BMIGauge from "../components/BMIGauge.jsx";
-import GuestAiNotice from "../components/GuestAiNotice.jsx";
 import Toast from "../components/Toast.jsx";
 import { getBMIAdvice } from "../api/openai.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
@@ -166,6 +165,7 @@ function planToText(plan, result, t) {
           lines.push(`${item.name}${grams}${calories}`);
         });
         if (option.preparation) lines.push(option.preparation);
+        lines.push(`${t("bmi.allergens")}: ${option.allergens || t("bmi.noAllergens")}`);
       });
     });
   }
@@ -646,18 +646,13 @@ function BMICalculatorForm({ profile }) {
   return (
     <div className="relative text-left rtl:text-right">
       <header className="mb-6 sm:mb-8">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--accent-green)] rtl:normal-case rtl:tracking-normal">
-          {t("bmi.eyebrow")}
-        </p>
-        <h1 className="mt-1 text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">
+        <h1 className="text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">
           {t("bmi.title")}
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)] sm:text-base">
           {t("bmi.subtitle")}
         </p>
       </header>
-
-      <GuestAiNotice />
 
       {seeded.fromProfile ? (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/10 px-3 py-2.5 text-sm text-[var(--text-primary)]">
@@ -1298,6 +1293,10 @@ function MealCard({ meal }) {
           {selected.preparation}
         </p>
       ) : null}
+      <p className="mt-2 text-sm text-[var(--text-secondary)]">
+        <span className="font-semibold text-[var(--text-primary)]">{t("bmi.allergens")}: </span>
+        {selected.allergens || t("bmi.noAllergens")}
+      </p>
     </Collapse>
   );
 }

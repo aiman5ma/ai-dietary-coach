@@ -240,9 +240,6 @@ export default function HistoryPanel({
       >
         <header className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
           <div className="min-w-0 text-start">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)] rtl:normal-case rtl:tracking-normal">
-              {t("history.title")}
-            </p>
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">
               {t("history.activity")}
             </h2>

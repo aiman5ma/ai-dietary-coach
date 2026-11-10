@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 
 import FoodCard from "../components/FoodCard.jsx";
-import GuestAiNotice from "../components/GuestAiNotice.jsx";
 import FoodCardSkeleton from "../components/FoodCardSkeleton.jsx";
 import { mealForNow } from "../utils/meals.js";
 import Toast from "../components/Toast.jsx";
@@ -270,18 +269,13 @@ export default function PhotoScanner() {
   return (
     <div className="relative text-start">
       <header className="mb-6 sm:mb-8">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--accent-green)] rtl:normal-case rtl:tracking-normal">
-          {t("scanner.eyebrow")}
-        </p>
-        <h1 className="mt-1 text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">
+        <h1 className="text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">
           {t("scanner.title")}
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)] sm:text-base">
           {t("scanner.subtitle")}
         </p>
       </header>
-
-      <GuestAiNotice />
 
       <input
         ref={fileInputRef}

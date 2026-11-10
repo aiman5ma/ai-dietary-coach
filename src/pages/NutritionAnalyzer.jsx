@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2, Plus, RotateCcw, X, Zap } from "lucide-react";
 
 import FoodCard from "../components/FoodCard.jsx";
-import GuestAiNotice from "../components/GuestAiNotice.jsx";
 import FoodCardSkeleton from "../components/FoodCardSkeleton.jsx";
 import MealPicker from "../components/MealPicker.jsx";
 import { mealForNow } from "../utils/meals.js";
@@ -507,18 +506,13 @@ export default function NutritionAnalyzer() {
   return (
     <div className="relative text-left rtl:text-right">
       <header className="mb-6 sm:mb-8">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--accent-green)] rtl:normal-case rtl:tracking-normal">
-          {t("nutrition.eyebrow")}
-        </p>
-        <h1 className="mt-1 text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">
+        <h1 className="text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">
           {t("nutrition.title")}
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)] sm:text-base">
           {t("nutrition.subtitle")}
         </p>
       </header>
-
-      <GuestAiNotice />
 
       <form onSubmit={handleSubmit} noValidate>
         <ul className="flex flex-col gap-3">

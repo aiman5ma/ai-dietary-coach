@@ -2,11 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Flame, History, Loader2, Plus, Scale, Sparkles, Trash2, UtensilsCrossed, X } from "lucide-react";
 
-import GuestAiNotice from "../components/GuestAiNotice.jsx";
 import MacroBar from "../components/MacroBar.jsx";
 import MealPicker from "../components/MealPicker.jsx";
 import { MEAL_IDS, mealForNow, mealLabelKey } from "../utils/meals.js";
-import { AI_AUTH_REQUIRED, getDailySummary, signInRequiredMessage } from "../api/openai.js";
+import { getDailySummary } from "../api/openai.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useHistory } from "../context/historyContext.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
@@ -555,7 +554,7 @@ export default function CalorieTracker() {
     } catch (err) {
       if (err?.name === "AbortError" || controller.signal.aborted) return;
       setSummary(null);
-      setSummaryError(err?.code === AI_AUTH_REQUIRED ? signInRequiredMessage() : "tracker.summaryError");
+      setSummaryError("tracker.summaryError");
     } finally {
       if (!controller.signal.aborted) setSummaryLoading(false);
     }
@@ -564,18 +563,13 @@ export default function CalorieTracker() {
   return (
     <div className="relative text-start">
       <header className="mb-6 sm:mb-8">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--accent-green)] rtl:normal-case rtl:tracking-normal">
-          {t("tracker.eyebrow")}
-        </p>
-        <h1 className="mt-1 text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">
+        <h1 className="text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">
           {t("tracker.title")}
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)] sm:text-base">
           {t("tracker.subtitle")}
         </p>
       </header>
-
-      <GuestAiNotice />
 
       {loadError ? (
         <p className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">

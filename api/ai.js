@@ -22,7 +22,7 @@ const RATE_WINDOW_MS = 60 * 60 * 1000;
 
 const hitsByIp = new Map();
 
-const COACH_SYSTEM_PROMPT = `You are Coach Nova, a professional nutrition coach. Your voice is warm, clear, and practical. When you reply in Arabic, speak as a woman in easy formal Arabic (العربية الفصحى السهلة). When you reply in English, speak as a professional nutrition coach.
+const COACH_SYSTEM_PROMPT = `You are Coach Nova, a smart assistant for nutrition and health. Your voice is warm, clear, and practical. When you reply in Arabic, use easy formal Arabic (العربية الفصحى السهلة) in the masculine form, and refer to yourself as المدرب نوفا. When you reply in English, speak as a professional nutrition coach.
 
 You only help with nutrition, food, diet, calories, weight, exercise for health, sleep, and general wellbeing.
 
@@ -82,8 +82,22 @@ function isLocalDevOrigin(origin) {
   }
 }
 
+function isProjectVercelOrigin(origin) {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    return (
+      host === "ai-dietary-coach.vercel.app" ||
+      (host.startsWith("ai-dietary-coach-") && host.endsWith(".vercel.app"))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function isAllowedOrigin(origin) {
-  return ALLOWED_SITE_ORIGINS.includes(origin) || isLocalDevOrigin(origin);
+  return ALLOWED_SITE_ORIGINS.includes(origin) || isProjectVercelOrigin(origin) || isLocalDevOrigin(origin);
 }
 
 function clientIp(req) {

@@ -55,7 +55,7 @@ function applyDocumentLanguage(lang) {
   root.dir = lang === "ar" ? "rtl" : "ltr";
   document.title =
     lookup(lang, "app.name") ??
-    (lang === "ar" ? "المدرب الغذائي الذكي" : "AI Dietary Coach");
+    "AI DIETARY COACH";
 }
 
 /**

@@ -8,48 +8,17 @@
 //   - chatWithNutritionist(messagesArray, lang, options?)
 //
 // Requests go to the same-origin `/api/ai` function. That function holds
-// the OpenAI key and chooses the model. Each function accepts an optional
-// `{ signal }` AbortSignal so callers can cancel in-flight requests.
-// Analyzer, BMI, photos, and the daily summary still require a signed-in
-// session. Coach Nova chat does not.
+// the OpenAI key and chooses the model. Guests and signed-in users use the
+// same request, with no Authorization header and no login check. Each
+// function accepts an optional `{ signal }` AbortSignal so callers can
+// cancel in-flight requests.
 
-import { translations } from "../i18n/translations.js";
-import { supabase } from "../lib/supabase.js";
-
-export const AI_AUTH_REQUIRED = "AUTH_REQUIRED";
-
-// Shown in full in toasts and inline errors, in both languages.
-export function signInRequiredMessage() {
-  const copy = translations.en.ai;
-  return `${copy.guestBodyEn}\n${copy.guestBodyAr}`;
-}
-
-function signInRequiredError() {
-  const error = new Error(signInRequiredMessage());
-  error.code = AI_AUTH_REQUIRED;
-  return error;
-}
-
-async function getAccessToken() {
-  if (!supabase) return "";
-  const { data } = await supabase.auth.getSession();
-  const token = data?.session?.access_token;
-  return typeof token === "string" ? token.trim() : "";
-}
-
-async function callOpenAI(body, { signal, requireAuth = true } = {}) {
-  const headers = { "Content-Type": "application/json" };
-  if (requireAuth) {
-    const accessToken = await getAccessToken();
-    if (!accessToken) throw signInRequiredError();
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
-
+async function callOpenAI(body, { signal } = {}) {
   let response;
   try {
     response = await fetch("/api/ai", {
       method: "POST",
-      headers,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal,
     });
@@ -59,8 +28,6 @@ async function callOpenAI(body, { signal, requireAuth = true } = {}) {
       cause: err,
     });
   }
-
-  if (requireAuth && response.status === 401) throw signInRequiredError();
 
   if (!response.ok) {
     let detail = "";
@@ -276,6 +243,7 @@ function normalizeOption(raw, index) {
     items,
     totalCalories: asRounded(raw.totalCalories ?? raw.calories),
     preparation,
+    allergens: cleanPlanText(raw.allergens),
   };
 }
 
@@ -434,7 +402,8 @@ Respond with ONLY a JSON object in this exact shape. Every free-text value must 
           "title": string,
           "items": [{ "name": string, "grams": number, "calories": number }],
           "totalCalories": number,
-          "preparation": string
+          "preparation": string,
+          "allergens": string
         }
       ]
     }
@@ -454,6 +423,8 @@ Rules:
 - mealsPerDay is exactly 5. meals has exactly these slots, in order: breakfast, morningSnack, lunch, afternoonSnack, dinner.
 - Each meal has exactly 3 options, id "A", "B", and "C". Options are alternatives, not foods eaten together. One option from each of the 5 meals should land near ${Math.round(calorieTarget)} kcal. Do not add every option together.
 - Each option lists every food in items with an exact grams weight and that item's calories. totalCalories is the sum of that option's item calories. preparation is one sentence on how to prepare it.
+- Every option must include allergens, even when the person reported no allergies. allergens is one short string naming the common allergens that option actually contains, written in ${languageName}. Check for milk, eggs, gluten/wheat, tree nuts, peanuts, sesame, fish, shellfish, soy, and similar common allergens. List only the ones present. If the option contains none, set allergens to "None" in English or "لا يوجد" in Arabic.
+- The allergens list does not replace the allergy-avoidance rules. Every meal option must still avoid the person's reported allergies and conditions.
 - eatFreely is 4 foods this person can eat freely for this goal. limit is 4 foods to cut back. Do not swap these lists between weight loss and weight gain.
 - The avoid list must be DIRECTLY related to this user's specific health conditions and goal ONLY.
 - If the user has no health conditions, the avoid list should only contain foods that genuinely contradict their goal (for example, for weight loss: high-calorie junk food, sugary drinks, fried fast food).
@@ -747,7 +718,7 @@ export async function chatWithNutritionist(messagesArray, lang = "ar", options =
       temperature: 0.7,
       messages: recent,
     },
-    { ...options, requireAuth: false },
+    options,
   );
 
   return content.trim();
