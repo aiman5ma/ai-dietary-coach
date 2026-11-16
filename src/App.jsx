@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Loader2 } from "lucide-react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
@@ -13,6 +14,8 @@ import PhotoScanner from "./pages/PhotoScanner.jsx";
 import NutritionChat from "./pages/NutritionChat.jsx";
 import CalorieTracker from "./pages/CalorieTracker.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
+
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard.jsx"));
 
 function AuthLoading() {
   const { t } = useLanguage();
@@ -52,6 +55,14 @@ function AppRoutes() {
           <Route path="/chat" element={<NutritionChat />} />
           <Route path="/tracker" element={<CalorieTracker />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route
+            path="/admin"
+            element={
+              <Suspense fallback={<AuthLoading />}>
+                <AdminDashboard />
+              </Suspense>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

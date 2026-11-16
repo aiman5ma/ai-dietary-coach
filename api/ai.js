@@ -2,7 +2,7 @@
 // Guests and signed-in users can both call it. There is no login check.
 //
 // POST /api/ai
-//   { model?, kind?: "text" | "image" | "chat", messages, max_tokens?, temperature?, response_format? }
+//   { model?, kind?: "text" | "image" | "chat" | "plan", messages, max_tokens?, temperature?, response_format? }
 
 import { Buffer } from "node:buffer";
 
@@ -278,8 +278,8 @@ export default async function handler(req, res) {
   }
 
   const kind = payload.kind == null || payload.kind === "" ? "text" : payload.kind;
-  if (kind !== "text" && kind !== "image" && kind !== "chat") {
-    return fail(res, 400, 'kind must be "text", "image", or "chat".');
+  if (kind !== "text" && kind !== "image" && kind !== "chat" && kind !== "plan") {
+    return fail(res, 400, 'kind must be "text", "image", "chat", or "plan".');
   }
 
   const model = chooseModel(kind, payload.model);
@@ -319,11 +319,53 @@ export default async function handler(req, res) {
       body: JSON.stringify(openaiBody),
     });
   } catch {
+    scheduleUsageLog(req, kind, false);
     return fail(res, 502, "The AI service could not be reached.");
   }
 
   const text = await openaiResponse.text();
+  scheduleUsageLog(req, kind, openaiResponse.ok);
   res.statusCode = openaiResponse.status;
   res.setHeader("Content-Type", "application/json");
   res.end(text || JSON.stringify({ error: { message: "Empty response from the AI service." } }));
+}
+
+function scheduleUsageLog(req, feature, ok) {
+  try {
+    const header = headerValue(req.headers?.authorization);
+    const token = /^Bearer\s+/i.test(header) ? header.replace(/^Bearer\s+/i, "").trim() : "";
+    const pending = writeUsageLog(token, feature, ok);
+    if (pending && typeof pending.catch === "function") pending.catch(() => {});
+  } catch {
+    /* Usage logging must never change the AI response. */
+  }
+}
+
+async function writeUsageLog(token, feature, ok) {
+  const url = String(process.env.SUPABASE_URL || "").trim();
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  if (!url || !key) return;
+  const { createClient } = await import("@supabase/supabase-js");
+  const supabase = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  let userId = null;
+  let isGuest = true;
+  if (token) {
+    try {
+      const { data } = await supabase.auth.getUser(token);
+      if (data?.user?.id) {
+        userId = data.user.id;
+        isGuest = false;
+      }
+    } catch {
+      /* A bad token still counts as a guest request. */
+    }
+  }
+  await supabase.from("usage_log").insert({
+    feature,
+    is_guest: isGuest,
+    user_id: userId,
+    ok: Boolean(ok),
+  });
 }

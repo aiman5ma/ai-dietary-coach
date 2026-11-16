@@ -1,5 +1,8 @@
 import { useEffect, useId, useState } from "react";
-import { Loader2, UserRound } from "lucide-react";
+import { Link } from "react-router-dom";
+import { LayoutDashboard, Loader2, UserRound } from "lucide-react";
+
+import { useIsAdmin } from "../hooks/useIsAdmin.js";
 
 import Toast from "../components/Toast.jsx";
 import { useProfile } from "../context/ProfileContext.jsx";
@@ -510,6 +513,7 @@ function ProfileForm({ initial, onSave }) {
 
 export default function ProfilePage() {
   const { t } = useLanguage();
+  const isAdmin = useIsAdmin();
   const { replaceProfile } = useProfile();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -558,6 +562,15 @@ export default function ProfilePage() {
         <p className="mt-1 text-sm text-[var(--text-secondary)] sm:text-base">
           {t("profile.subtitle")}
         </p>
+        {isAdmin ? (
+          <Link
+            to="/admin"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[var(--accent-green)] px-4 py-2 text-sm font-medium text-white"
+          >
+            <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+            {t("nav.admin")}
+          </Link>
+        ) : null}
       </header>
 
       {loading ? (

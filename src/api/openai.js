@@ -519,7 +519,7 @@ async function requestDietPiece(userPrompt, lang, requestOptions, job) {
   const run = async () => {
     const content = await callOpenAI(
       {
-        kind: "text",
+        kind: "plan",
         temperature: 0.9,
         response_format: { type: "json_object" },
         messages: [

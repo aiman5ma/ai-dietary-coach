@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Camera, Flame, Globe, Leaf, LogOut, MessageCircle, Moon, Salad, Scale, Sun, UserRound } from "lucide-react";
+import { Camera, Flame, Globe, LayoutDashboard, Leaf, LogOut, MessageCircle, Moon, Salad, Scale, Sun, UserRound } from "lucide-react";
 
 import { useAuth } from "../context/AuthContext.jsx";
+import { useIsAdmin } from "../hooks/useIsAdmin.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
 import { useTheme } from "../context/ThemeContext.jsx";
 import { getDailyLog } from "../lib/storage.js";
@@ -156,6 +157,7 @@ const bottomItemClasses = ({ isActive }) =>
 
 export default function Navbar() {
   const { t, lang } = useLanguage();
+  const isAdmin = useIsAdmin();
   const todayKcal = useTodayCalories();
   const locale = lang === "ar" ? "ar" : "en";
   const calorieBadge = todayKcal == null ? null : Math.round(todayKcal).toLocaleString(locale);
@@ -208,6 +210,16 @@ export default function Navbar() {
               aria-hidden="true"
             />
           </NavLink>
+          {isAdmin ? (
+            <NavLink to="/admin" className={sidebarItemClasses}>
+              <LayoutDashboard
+                className="h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-105"
+                strokeWidth={2}
+                aria-hidden="true"
+              />
+              <span className="min-w-0 flex-1">{t("nav.admin")}</span>
+            </NavLink>
+          ) : null}
         </nav>
 
         <LanguageToggle className="w-full" />
