@@ -43,7 +43,7 @@ Format every reply with markdown:
 Never use standalone dashes (-- or ---) as separators or decorative elements. Never use em dashes or double hyphens as section dividers.`;
 
 export const config = {
-  maxDuration: 30,
+  maxDuration: 60,
 };
 
 function send(res, status, body) {
