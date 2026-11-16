@@ -134,7 +134,15 @@ export async function analyzeNutrition(foodName, weightGrams, lang = "ar", optio
     throw new Error("weightGrams must be a positive number.");
   }
 
+  const weightState = options.weightState === "raw" ? "raw" : "cooked";
+  const stateLine =
+    weightState === "raw"
+      ? `The ${grams}g is the RAW weight, before cooking. Calculate the nutrition of this raw weight. The same grams of the cooked food would be a different calorie amount: dry or raw food is usually more calorie-dense per gram than the cooked food after it absorbs water.`
+      : `The ${grams}g is the COOKED weight, after cooking. Calculate the nutrition of this cooked weight. The same grams of the raw food would be a different calorie amount: cooked food that absorbed water is usually less calorie-dense per gram than the raw food.`;
   const userPrompt = `Provide nutritional values for ${grams}g of "${foodName.trim()}".
+Weight state: ${weightState}.
+${stateLine}
+If this food is not cooked by nature (for example fruit, milk, yogurt, juice, or a food eaten as it is), ignore the raw/cooked setting and use the food as eaten.
 
 Respond with ONLY a JSON object in this exact shape (numbers only, grams for macros, no units inside values):
 {

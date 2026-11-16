@@ -34,7 +34,7 @@ const TOTAL_FIELDS = [
 const round1 = (n) => Math.round(n * 10) / 10;
 
 function createItem() {
-  return { id: generateId(), name: "", weightStr: "100", unit: "g" };
+  return { id: generateId(), name: "", weightStr: "100", unit: "g", weightState: "cooked" };
 }
 
 function gramsFromInput(value, unit) {
@@ -43,14 +43,16 @@ function gramsFromInput(value, unit) {
   return unit === "oz" ? n * OZ_TO_GRAMS : n;
 }
 
-function formatWeightLabel(value, unit, t) {
+function formatWeightLabel(value, unit, t, weightState) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "";
-  if (unit === "oz") {
-    const grams = Math.round(n * OZ_TO_GRAMS);
-    return `${round1(n)} ${t("common.ounces")} · ${grams} ${t("common.grams")}`;
-  }
-  return `${Math.round(n)} ${t("common.grams")}`;
+  const amount =
+    unit === "oz"
+      ? `${round1(n)} ${t("common.ounces")} · ${Math.round(n * OZ_TO_GRAMS)} ${t("common.grams")}`
+      : `${Math.round(n)} ${t("common.grams")}`;
+  if (weightState !== "raw" && weightState !== "cooked") return amount;
+  const stateLabel = t(weightState === "raw" ? "nutrition.rawResult" : "nutrition.cookedResult");
+  return `${amount} (${stateLabel})`;
 }
 
 function withTimestamp(fields) {
@@ -92,12 +94,15 @@ function FoodRow({
   weightRef,
   onNameChange,
   onWeightChange,
+  onWeightStateChange,
   onToggleUnit,
   onRemove,
 }) {
   const { t } = useLanguage();
   const nameId = `food-name-${item.id}`;
   const weightId = `food-weight-${item.id}`;
+  const stateHintId = `food-state-hint-${item.id}`;
+  const weightState = item.weightState === "raw" ? "raw" : "cooked";
 
   return (
     <li className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-4 text-left shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.45)] backdrop-blur-md rtl:text-right sm:p-5">
@@ -136,7 +141,7 @@ function FoodRow({
           />
         </div>
 
-        <div>
+        <div className="min-w-0 sm:w-64">
           <label
             htmlFor={weightId}
             className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] rtl:normal-case rtl:tracking-normal"
@@ -168,6 +173,40 @@ function FoodRow({
               {item.unit === "oz" ? t("common.ounces") : t("common.grams")}
             </button>
           </div>
+          <div
+            role="radiogroup"
+            aria-label={t("nutrition.weightState")}
+            aria-describedby={stateHintId}
+            className="mt-2 grid grid-cols-2 gap-1 rounded-xl border border-[var(--border)] bg-black/[0.04] p-1 dark:bg-white/[0.06]"
+          >
+            {[
+              ["raw", "nutrition.raw"],
+              ["cooked", "nutrition.cooked"],
+            ].map(([id, labelKey]) => {
+              const selected = weightState === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={disabled}
+                  onClick={() => onWeightStateChange(id)}
+                  className={[
+                    "btn-press rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors disabled:opacity-60",
+                    selected
+                      ? "bg-[var(--accent-green)]/15 text-[var(--accent-green)]"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                  ].join(" ")}
+                >
+                  {t(labelKey)}
+                </button>
+              );
+            })}
+          </div>
+          <p id={stateHintId} className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-secondary)]">
+            {t("nutrition.weightStateHint")}
+          </p>
         </div>
       </div>
     </li>
@@ -341,14 +380,16 @@ export default function NutritionAnalyzer() {
         requests.map(async (req) => {
           const data = await analyzeNutrition(req.name, req.grams, lang, {
             signal: controller.signal,
+            weightState: req.weightState,
           });
           return {
             id: generateId(),
             foodName: req.name,
+            ...data,
             weightAmount: req.amount,
             weightUnit: req.unit,
             weightGrams: req.grams,
-            ...data,
+            weightState: req.weightState,
           };
         }),
       );
@@ -398,6 +439,7 @@ export default function NutritionAnalyzer() {
         grams: Math.round(grams),
         amount: item.weightStr,
         unit: item.unit,
+        weightState: item.weightState === "raw" ? "raw" : "cooked",
       });
     }
 
@@ -425,7 +467,7 @@ export default function NutritionAnalyzer() {
 
   function resultWeight(result) {
     if (result?.weightAmount != null && result?.weightUnit) {
-      return formatWeightLabel(result.weightAmount, result.weightUnit, t);
+      return formatWeightLabel(result.weightAmount, result.weightUnit, t, result.weightState);
     }
     return result?.weightLabel || "";
   }
@@ -533,6 +575,7 @@ export default function NutritionAnalyzer() {
               }}
               onNameChange={(name) => updateItem(item.id, { name })}
               onWeightChange={(weightStr) => updateItem(item.id, { weightStr })}
+              onWeightStateChange={(weightState) => updateItem(item.id, { weightState })}
               onToggleUnit={() => toggleUnit(item.id)}
               onRemove={() => removeItem(item.id)}
             />
