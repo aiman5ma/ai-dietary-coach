@@ -15,7 +15,7 @@ import {
 
 import BMIGauge from "../components/BMIGauge.jsx";
 import Toast from "../components/Toast.jsx";
-import { getBMIAdvice } from "../api/openai.js";
+import { foodsToAvoid, getBMIAdvice } from "../api/openai.js";
 import { useLanguage } from "../context/LanguageContext.jsx";
 import { useProfile } from "../context/ProfileContext.jsx";
 import { extractMealNames, getBMIHistory, getPreviousMealHistory, logBMI, rememberMealHistory } from "../lib/storage.js";
@@ -124,7 +124,7 @@ function formatWeightDisplay(display, t) {
   return `${display.value} ${unit}`;
 }
 
-function planToText(plan, result, t) {
+function planToText(plan, result, t, avoidFoods = []) {
   if (!plan) return "";
   const lines = [];
   if (plan.intro) lines.push(plan.intro, "");
@@ -178,9 +178,9 @@ function planToText(plan, result, t) {
     lines.push("", t("bmi.limit"));
     plan.limit.forEach((item) => lines.push(item));
   }
-  if (plan.avoid?.length) {
+  if (avoidFoods.length) {
     lines.push("", t("bmi.avoid"));
-    plan.avoid.forEach((item) => lines.push(item));
+    avoidFoods.forEach((item) => lines.push(item));
   }
   const tips = plan.weeklyTips?.length ? plan.weeklyTips : plan.guidance;
   if (tips?.length) {
@@ -592,7 +592,7 @@ function BMICalculatorForm({ profile }) {
   async function handleCopyAdvice() {
     if (!plan || !result) return;
     try {
-      await navigator.clipboard.writeText(planToText(plan, result, t));
+      await navigator.clipboard.writeText(planToText(plan, result, t, foodsToAvoid(profile, lang)));
       showToast(t("bmi.copied"), "success");
     } catch {
       showToast(t("bmi.copyFailed"), "error");
@@ -616,7 +616,7 @@ function BMICalculatorForm({ profile }) {
       bmr: Math.round(result.bmr),
       tdee: result.tdee,
       calorieTarget: result.calorieTarget,
-      advice: plan ? planToText(plan, result, t) : "",
+      advice: plan ? planToText(plan, result, t, foodsToAvoid(profile, lang)) : "",
       dietPlan: plan,
       date: epochNow(),
     };
@@ -1105,12 +1105,14 @@ function ResultsSection({
 }
 
 function DietPlan({ plan }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const { profile } = useProfile();
+  const avoidFoods = foodsToAvoid(profile, lang);
   const hasMacros =
     plan.proteinGrams != null && plan.carbGrams != null && plan.fatGrams != null;
   const freeFoods = plan.eatFreely?.length ? plan.eatFreely : plan.prioritize || [];
   const tips = plan.weeklyTips?.length ? plan.weeklyTips : plan.guidance || [];
-  const hasFoodGroups = freeFoods.length || plan.limit?.length || plan.avoid?.length;
+  const hasFoodGroups = freeFoods.length || plan.limit?.length || avoidFoods.length;
 
   return (
     <div className="flex flex-col gap-3">
@@ -1156,8 +1158,8 @@ function DietPlan({ plan }) {
             {plan.limit?.length ? (
               <TagGroup title={t("bmi.limit")} items={plan.limit} tone="limit" />
             ) : null}
-            {plan.avoid?.length ? (
-              <TagGroup title={t("bmi.avoid")} items={plan.avoid} tone="avoid" />
+            {avoidFoods.length ? (
+              <TagGroup title={t("bmi.avoid")} items={avoidFoods} tone="avoid" />
             ) : null}
           </div>
         </Collapse>

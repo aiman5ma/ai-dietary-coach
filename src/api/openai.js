@@ -7,6 +7,8 @@
 //   - getDailySummary(foodEntries, userGoal, calorieTarget, lang, options?)
 //   - chatWithNutritionist(messagesArray, lang, options?)
 //
+import { translations } from "../i18n/translations.js";
+
 // Requests go to the same-origin `/api/ai` function. That function holds
 // the OpenAI key and chooses the model. Guests and signed-in users use the
 // same request, with no Authorization header and no login check. Each
@@ -62,6 +64,32 @@ async function callOpenAI(body, { signal } = {}) {
 
 function normalizeLang(lang) {
   return lang === "en" ? "en" : "ar";
+}
+
+const ALLERGY_IDS = ["celiac", "lactose", "nuts", "seafood"];
+
+function customAllergyEntries(value) {
+  return String(value || "")
+    .split(/[,،;\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+/** Foods the person marked as allergies, including text they typed themselves. */
+export function foodsToAvoid(profile, lang = "ar") {
+  const labels = translations[normalizeLang(lang)].profile;
+  const ids = [
+    ...(Array.isArray(profile?.conditions) ? profile.conditions : []),
+    ...(Array.isArray(profile?.allergies) ? profile.allergies : []),
+  ].filter((id) => typeof id === "string");
+  const selected = ALLERGY_IDS.filter((id) => ids.includes(id)).map((id) => labels[id]);
+  const custom = [
+    ...customAllergyEntries(profile?.otherConditions),
+    ...ids
+      .filter((id) => id.startsWith("other:"))
+      .flatMap((id) => customAllergyEntries(id.slice("other:".length))),
+  ];
+  return [...new Set([...selected, ...custom])];
 }
 
 function languageDirective(lang) {
@@ -414,22 +442,14 @@ function dietMealPrompt({ job, budgets, languageName, profileText, allergyBlock,
     ? `,
   "eatFreely": [string],
   "limit": [string],
-  "avoid": [string],
   "weeklyTips": [string],
   "allergyNote": string`
     : "";
   const guidanceRules = job.includeGuidance
     ? `
 Shared guidance for the whole day, in ${languageName}:
+- Do not return a list of foods to avoid completely. That list is not part of this response.
 - eatFreely is 4 foods this person can eat freely for this goal. limit is 4 foods to cut back. Do not swap these lists between weight loss and weight gain.
-- The avoid list must be DIRECTLY related to this user's specific health conditions and goal ONLY.
-- If the user has no health conditions, the avoid list should only contain foods that genuinely contradict their goal (for example, for weight loss: high-calorie junk food, sugary drinks, fried fast food).
-- NEVER suggest avoiding seafood unless the user specifically has a seafood allergy.
-- NEVER suggest avoiding canned food as a general rule.
-- NEVER mention alcohol, toxins, or poisonous foods. These are obvious and irrelevant.
-- NEVER suggest avoiding spicy food unless the user has a digestive condition.
-- The avoid list must be specific and practical, containing a maximum of 5 items that are genuinely relevant to THIS user's profile.
-- The foods to avoid section must only contain items that are realistic temptations for someone with this user's goal and conditions. Do not include obvious harmful substances or foods with no connection to the user's situation.
 - weeklyTips is exactly 3 short tips for varying meals across the week.
 - If allergies and conditions are "None reported.", set allergyNote to an empty string. Otherwise, allergyNote must name the conditions, the foods to skip, and safe alternatives available in Saudi Arabia.`
     : "";
@@ -621,7 +641,7 @@ Goal: ${goal}`;
   const meals = pieces
     .flatMap((piece) => piece.meals)
     .sort((a, b) => DIET_SLOT_ORDER.indexOf(a.slot) - DIET_SLOT_ORDER.indexOf(b.slot));
-  const guidance = pieces.find((piece) => piece.raw?.eatFreely || piece.raw?.avoid)?.raw || {};
+  const guidance = pieces.find((piece) => piece.raw?.eatFreely || piece.raw?.limit)?.raw || {};
 
   return normalizeDietPlan({
     mealsPerDay: meals.length,
@@ -629,7 +649,7 @@ Goal: ${goal}`;
     ...totalsFromMeals(meals),
     eatFreely: guidance.eatFreely,
     limit: guidance.limit,
-    avoid: guidance.avoid,
+    avoid: foodsToAvoid(profile, lang),
     weeklyTips: guidance.weeklyTips,
     hydrationMl: waterMl,
     hydrationNote: hydrationNoteFor(lang),
