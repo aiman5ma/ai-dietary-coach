@@ -219,6 +219,9 @@ function normalizeItem(raw) {
     name,
     grams: asRounded(raw.grams),
     calories: asRounded(raw.calories),
+    protein: asRounded(raw.protein ?? raw.proteinGrams),
+    carbs: asRounded(raw.carbs ?? raw.carbGrams),
+    fat: asRounded(raw.fat ?? raw.fatGrams),
   };
 }
 
@@ -237,11 +240,15 @@ function normalizeOption(raw, index) {
   const title = cleanPlanText(raw.title);
   const preparation = cleanPlanText(raw.preparation);
   if (!title && !items.length && !preparation) return null;
+  const itemsHaveCalories = items.length > 0 && items.every((item) => item.calories != null);
+  const totalCalories = itemsHaveCalories
+    ? items.reduce((sum, item) => sum + item.calories, 0)
+    : asRounded(raw.totalCalories ?? raw.calories);
   return {
     id,
     title,
     items,
-    totalCalories: asRounded(raw.totalCalories ?? raw.calories),
+    totalCalories,
     preparation,
     allergens: cleanPlanText(raw.allergens),
   };
@@ -308,6 +315,226 @@ function normalizeDietPlan(raw) {
   return plan;
 }
 
+const DIET_MEAL_JOBS = [
+  {
+    key: "breakfast",
+    includeGuidance: true,
+    slots: [{ slot: "breakfast", label: "Breakfast", budgetKey: "breakfast" }],
+    others: ["Lunch", "Dinner", "Morning snack", "Afternoon snack"],
+    focus:
+      "This request is breakfast only. Options A, B, and C must be three different breakfasts, built around eggs, dairy, and beans or oats. Do not serve a rice-and-meat lunch or dinner plate.",
+  },
+  {
+    key: "lunch",
+    slots: [{ slot: "lunch", label: "Lunch", budgetKey: "lunch" }],
+    others: ["Breakfast", "Dinner", "Morning snack", "Afternoon snack"],
+    focus:
+      "This request is lunch only. Options A, B, and C must be three different full savory meals, centered on chicken, red meat, and fish or legumes. One option must be a traditional Saudi dish. Do not use eggs or oats as the main food.",
+  },
+  {
+    key: "dinner",
+    slots: [{ slot: "dinner", label: "Dinner", budgetKey: "dinner" }],
+    others: ["Breakfast", "Lunch", "Morning snack", "Afternoon snack"],
+    focus:
+      "This request is dinner only. Options A, B, and C must be three different dinners centered on turkey or liver, shrimp or tuna, and chickpeas or a vegetable stew. If an allergy forbids one, replace only that food with another dinner food that is not chicken, beef, or eggs. One option must be a traditional Saudi dish.",
+  },
+  {
+    key: "snacks",
+    slots: [
+      { slot: "morningSnack", label: "Morning snack", budgetKey: "morningSnack" },
+      { slot: "afternoonSnack", label: "Afternoon snack", budgetKey: "afternoonSnack" },
+    ],
+    others: ["Breakfast", "Lunch", "Dinner"],
+    focus:
+      "This request is snacks only. The morning snack's three options must be different fruit-based snacks. The afternoon snack's three options must be different protein-based or grain-based snacks, and must not repeat the morning snack.",
+  },
+];
+
+const DIET_SLOT_ORDER = ["breakfast", "morningsnack", "lunch", "afternoonsnack", "dinner"];
+
+function dietPlanRetryMessage(lang) {
+  return normalizeLang(lang) === "en"
+    ? "One part of the diet plan did not finish. Please try again."
+    : "لم يكتمل جزء من الخطة الغذائية. يرجى المحاولة مرة أخرى.";
+}
+
+function hydrationNoteFor(lang) {
+  return normalizeLang(lang) === "en"
+    ? "About 35 ml of water for each kilogram of body weight."
+    : "نحو 35 مل من الماء لكل كيلوغرام من وزن الجسم.";
+}
+
+function splitCalorieBudgets(calorieTarget) {
+  const daily = Math.round(calorieTarget);
+  const breakfast = Math.round(daily * 0.25);
+  const morningSnack = Math.round(daily * 0.1);
+  const afternoonSnack = Math.round(daily * 0.1);
+  const dinner = Math.round(daily * 0.25);
+  const lunch = daily - breakfast - morningSnack - afternoonSnack - dinner;
+  return { breakfast, morningSnack, lunch, afternoonSnack, dinner };
+}
+
+function totalsFromMeals(meals) {
+  let protein = 0;
+  let carbs = 0;
+  let fat = 0;
+  let sawProtein = false;
+  let sawCarbs = false;
+  let sawFat = false;
+  for (const meal of meals) {
+    const option = meal.options?.find((item) => item.id === "A") || meal.options?.[0];
+    for (const item of option?.items || []) {
+      if (item.protein != null) {
+        protein += item.protein;
+        sawProtein = true;
+      }
+      if (item.carbs != null) {
+        carbs += item.carbs;
+        sawCarbs = true;
+      }
+      if (item.fat != null) {
+        fat += item.fat;
+        sawFat = true;
+      }
+    }
+  }
+  return {
+    proteinGrams: sawProtein ? protein : null,
+    carbGrams: sawCarbs ? carbs : null,
+    fatGrams: sawFat ? fat : null,
+  };
+}
+
+function dietMealPrompt({ job, budgets, languageName, profileText, allergyBlock, avoidedMeals }) {
+  const slotLines = job.slots
+    .map((slot) => `- ${slot.label} (slot "${slot.slot}"): ${budgets[slot.budgetKey]} kcal`)
+    .join("\n");
+  const slotShape = job.slots.map((slot) => `"${slot.slot}"`).join(" | ");
+  const guidanceShape = job.includeGuidance
+    ? `,
+  "eatFreely": [string],
+  "limit": [string],
+  "avoid": [string],
+  "weeklyTips": [string],
+  "allergyNote": string`
+    : "";
+  const guidanceRules = job.includeGuidance
+    ? `
+Shared guidance for the whole day, in ${languageName}:
+- eatFreely is 4 foods this person can eat freely for this goal. limit is 4 foods to cut back. Do not swap these lists between weight loss and weight gain.
+- The avoid list must be DIRECTLY related to this user's specific health conditions and goal ONLY.
+- If the user has no health conditions, the avoid list should only contain foods that genuinely contradict their goal (for example, for weight loss: high-calorie junk food, sugary drinks, fried fast food).
+- NEVER suggest avoiding seafood unless the user specifically has a seafood allergy.
+- NEVER suggest avoiding canned food as a general rule.
+- NEVER mention alcohol, toxins, or poisonous foods. These are obvious and irrelevant.
+- NEVER suggest avoiding spicy food unless the user has a digestive condition.
+- The avoid list must be specific and practical, containing a maximum of 5 items that are genuinely relevant to THIS user's profile.
+- The foods to avoid section must only contain items that are realistic temptations for someone with this user's goal and conditions. Do not include obvious harmful substances or foods with no connection to the user's situation.
+- weeklyTips is exactly 3 short tips for varying meals across the week.
+- If allergies and conditions are "None reported.", set allergyNote to an empty string. Otherwise, allergyNote must name the conditions, the foods to skip, and safe alternatives available in Saudi Arabia.`
+    : "";
+
+  return `Write ONLY this part of a diet plan for THIS person. Keep every meal option fully detailed.
+
+${profileText}
+Allergies and conditions: ${allergyBlock}
+Daily calorie target: ${Object.values(budgets).reduce((sum, value) => sum + value, 0)} kcal.
+Calorie budget for this request only (each option must land close to its own budget, and these budgets are already part of the daily target):
+${slotLines}
+Other meal types today, which you must not repeat: ${job.others.join(", ")}.
+${job.focus}
+If an allergy, intolerance, or a vegetarian or vegan condition forbids a suggested food, replace only that food with another allowed food that still does not repeat the other meal types.
+
+Respond with ONLY a JSON object. Every free-text value must be in ${languageName}. Do not restate the person's age, sex, height, weight, activity, goal, or calorie numbers in any text field.
+{
+  "meals": [
+    {
+      "slot": ${slotShape},
+      "options": [
+        {
+          "id": "A" | "B" | "C",
+          "title": string,
+          "items": [{ "name": string, "grams": number, "calories": number, "protein": number, "carbs": number, "fat": number }],
+          "totalCalories": number,
+          "preparation": string,
+          "allergens": string
+        }
+      ]
+    }
+  ]${guidanceShape}
+}
+
+Rules:
+- Include exactly these slots: ${job.slots.map((slot) => slot.slot).join(", ")}. Each slot has exactly 3 options, id "A", "B", and "C". Options are alternatives, not foods eaten together.
+- Each option lists every food in items with an exact gram weight, that item's calories, and that item's protein, carbs, and fat in grams. totalCalories is the sum of that option's item calories. preparation is one sentence on how to prepare it.
+- Every option must include allergens, even when the person reported no allergies. allergens is one short string naming the common allergens that option actually contains, written in ${languageName}. Check for milk, eggs, gluten/wheat, tree nuts, peanuts, sesame, fish, shellfish, soy, and similar common allergens. List only the ones present. If the option contains none, set allergens to "None" in English or "لا يوجد" in Arabic.
+- The allergens list does not replace the allergy-avoidance rules. Every meal option must still avoid the person's reported allergies and conditions.
+- No ingredient should appear more than once across all 3 options of the same meal.
+- Options A, B, and C for each meal must be completely different in concept, not just different quantities of the same food.
+- Each meal option must represent a different cuisine style or food category where possible.
+- Every food item name includes the food, and its exact gram weight is in grams (for example cooked rice at 150 grams, not just rice).
+- Sauces, oils, and condiments are their own items, with grams or milliliters in the name and calories in the calories field (for example olive oil, 5 ml, 45 calories).
+- Drinks are their own items with a quantity (water, tea, and similar).
+- Write every name, title, preparation, and note in ${languageName}.
+- When naming meal options, NEVER label them by nationality or region. Do not write 'فطور سعودي' or 'وجبة مصرية' or 'طبق لبناني'. Just write the meal name directly, for example: 'فول بالزيت والليمون مع بيض مسلوق' instead of 'فطور سعودي تقليدي'. The meal name should describe what the food actually is.
+- Prioritize foods commonly available in Saudi supermarkets.
+- Avoid exotic ingredients that are hard to find locally.
+- Be creative and surprising with your meal choices. Explore diverse cuisines including Saudi, Levantine, Egyptian, Mediterranean, and healthy international options.
+- Do NOT use standalone dashes (-- or ---) anywhere, and do not use em dashes.
+- No markdown, no headings inside strings, no extra keys.${guidanceRules}${
+    avoidedMeals.length
+      ? `
+
+CRITICAL ANTI-REPETITION RULE:
+The following meals and ingredients were suggested in previous sessions for this user.
+You are STRICTLY FORBIDDEN from suggesting any of these again:
+${avoidedMeals.join(", ")}
+If you accidentally include any of these, your response will be rejected.
+You must suggest completely new and different meals that this user has never received before.`
+      : ""
+  }`;
+}
+
+async function requestDietPiece(userPrompt, lang, requestOptions, job) {
+  const run = async () => {
+    const content = await callOpenAI(
+      {
+        kind: "text",
+        temperature: 0.9,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: `${languageDirective(lang)}\nYou are Coach Nova, a certified nutritionist. You write detailed diet plans that can only fit the specific person described, including their allergies and conditions. Always respond with valid JSON only, no markdown, and never use standalone dashes.`,
+          },
+          { role: "user", content: userPrompt },
+        ],
+      },
+      requestOptions,
+    );
+    const raw = parseJsonResponse(content, "diet plan");
+    const expected = job.slots.map((slot) => slot.slot.toLowerCase());
+    const meals = normalizeMeals(raw?.meals).filter((meal) => expected.includes(meal.slot));
+    const complete = expected.every((slot) =>
+      meals.some((meal) => meal.slot === slot && meal.options.length >= 3),
+    );
+    if (!complete) throw new Error("incomplete diet meal");
+    return { meals, raw };
+  };
+
+  try {
+    return await run();
+  } catch (err) {
+    if (err?.name === "AbortError") throw err;
+    try {
+      return await run();
+    } catch (retryErr) {
+      if (retryErr?.name === "AbortError") throw retryErr;
+      throw new Error(dietPlanRetryMessage(lang), { cause: retryErr });
+    }
+  }
+}
+
 /**
  * Request a structured diet plan for one user profile.
  *
@@ -333,13 +560,13 @@ export async function getBMIAdvice(profile, lang = "ar", previousMeals = [], opt
     throw new Error("profile is required.");
   }
 
-  const bmi = requireFinite(profile.bmi, "bmi");
+  requireFinite(profile.bmi, "bmi");
   const heightCm = requireFinite(profile.heightCm, "heightCm");
   const weightKg = requireFinite(profile.weightKg, "weightKg");
   const age = requireFinite(profile.age, "age");
-  const tdee = requireFinite(profile.tdee, "tdee");
+  requireFinite(profile.tdee, "tdee");
   const calorieTarget = requireFinite(profile.calorieTarget, "calorieTarget");
-  const bmr = requireFinite(profile.bmr, "bmr");
+  requireFinite(profile.bmr, "bmr");
 
   if (!profile.category || typeof profile.category !== "string") {
     throw new Error("category is required.");
@@ -352,8 +579,6 @@ export async function getBMIAdvice(profile, lang = "ar", previousMeals = [], opt
   if (!goal) throw new Error("goal is not recognized.");
 
   const languageName = normalizeLang(lang) === "en" ? "English" : "Arabic";
-  const goalDelta =
-    profile.goal === "loss" ? "TDEE − 500" : profile.goal === "gain" ? "TDEE + 300" : "TDEE";
   const conditionIds = [
     ...(Array.isArray(profile.conditions) ? profile.conditions : []),
     ...(Array.isArray(profile.allergies) ? profile.allergies : []),
@@ -367,131 +592,49 @@ export async function getBMIAdvice(profile, lang = "ar", previousMeals = [], opt
   const allergyBlock = conditionText.length ? conditionText.join("; ") : "None reported.";
   const waterMl = Math.round(weightKg * 35);
 
-  const userPrompt = `Write a highly detailed diet plan for THIS person only. Use the exact figures below. Do not substitute round numbers or a generic adult template.
-
-Language for every free-text field: ${languageName}.
-Sex: ${sex}
+  const budgets = splitCalorieBudgets(calorieTarget);
+  const profileText = `Sex: ${sex}
 Age: ${Math.round(age)} years
 Height: ${Math.round(heightCm)} cm
 Weight: ${weightKg} kg
-BMI: ${bmi} (${profile.category})
 Activity level: ${profile.activityLevel}, ${activity}
-BMR (Mifflin-St Jeor): ${Math.round(bmr)} kcal
-TDEE: ${Math.round(tdee)} kcal
-Goal: ${goal}
-Daily calorie target: ${Math.round(calorieTarget)} kcal (${goalDelta})
-Allergies and conditions: ${allergyBlock}
-Suggested water target: ${waterMl} ml per day (35 ml per kg).
+Goal: ${goal}`;
 
-Respond with ONLY a JSON object in this exact shape. Every free-text value must be in ${languageName}:
-{
-  "intro": string,
-  "proteinGrams": number,
-  "proteinCalories": number,
-  "carbGrams": number,
-  "carbCalories": number,
-  "fatGrams": number,
-  "fatCalories": number,
-  "mealsPerDay": 5,
-  "meals": [
-    {
-      "slot": "breakfast" | "morningSnack" | "lunch" | "afternoonSnack" | "dinner",
-      "options": [
-        {
-          "id": "A" | "B" | "C",
-          "title": string,
-          "items": [{ "name": string, "grams": number, "calories": number }],
-          "totalCalories": number,
-          "preparation": string,
-          "allergens": string
-        }
-      ]
-    }
-  ],
-  "eatFreely": [string],
-  "limit": [string],
-  "avoid": [string],
-  "weeklyTips": [string],
-  "hydrationMl": number,
-  "hydrationNote": string,
-  "allergyNote": string
-}
-
-Rules:
-- intro is 2–3 sentences addressed to "you". It must state the exact age, sex, activity description, BMI category, goal, TDEE (${Math.round(tdee)}), and calorie target (${Math.round(calorieTarget)}).
-- proteinGrams, carbGrams, and fatGrams are daily gram targets for ${weightKg} kg at ${Math.round(calorieTarget)} kcal. Scale protein to this body weight and goal (higher when losing or gaining). proteinCalories = proteinGrams × 4, carbCalories = carbGrams × 4, fatCalories = fatGrams × 9. Those three calorie amounts must add up to about ${Math.round(calorieTarget)}.
-- mealsPerDay is exactly 5. meals has exactly these slots, in order: breakfast, morningSnack, lunch, afternoonSnack, dinner.
-- Each meal has exactly 3 options, id "A", "B", and "C". Options are alternatives, not foods eaten together. One option from each of the 5 meals should land near ${Math.round(calorieTarget)} kcal. Do not add every option together.
-- Each option lists every food in items with an exact grams weight and that item's calories. totalCalories is the sum of that option's item calories. preparation is one sentence on how to prepare it.
-- Every option must include allergens, even when the person reported no allergies. allergens is one short string naming the common allergens that option actually contains, written in ${languageName}. Check for milk, eggs, gluten/wheat, tree nuts, peanuts, sesame, fish, shellfish, soy, and similar common allergens. List only the ones present. If the option contains none, set allergens to "None" in English or "لا يوجد" in Arabic.
-- The allergens list does not replace the allergy-avoidance rules. Every meal option must still avoid the person's reported allergies and conditions.
-- eatFreely is 4 foods this person can eat freely for this goal. limit is 4 foods to cut back. Do not swap these lists between weight loss and weight gain.
-- The avoid list must be DIRECTLY related to this user's specific health conditions and goal ONLY.
-- If the user has no health conditions, the avoid list should only contain foods that genuinely contradict their goal (for example, for weight loss: high-calorie junk food, sugary drinks, fried fast food).
-- NEVER suggest avoiding seafood unless the user specifically has a seafood allergy.
-- NEVER suggest avoiding canned food as a general rule.
-- NEVER mention alcohol, toxins, or poisonous foods. These are obvious and irrelevant.
-- NEVER suggest avoiding spicy food unless the user has a digestive condition.
-- The avoid list must be specific and practical, containing a maximum of 5 items that are genuinely relevant to THIS user's profile.
-- The foods to avoid section must only contain items that are realistic temptations for someone with this user's goal and conditions. Do not include obvious harmful substances or foods with no connection to the user's situation.
-- weeklyTips is exactly 3 short tips for varying meals across the week.
-- hydrationMl is ${waterMl}. hydrationNote explains that amount from this body weight in one or two sentences.
-- If allergies and conditions are "None reported.", set allergyNote to an empty string. Otherwise, every meal option must avoid those foods, and allergyNote must name the conditions, the foods to skip, and safe alternatives available in Saudi Arabia.
-
-VARIETY RULES:
-- No ingredient should appear more than once across all 3 options of the same meal.
-- No protein source should repeat across Breakfast, Lunch, and Dinner options on the same day.
-- Options A, B, and C for each meal must be completely different in concept, not just different quantities of the same food (e.g. do not give "chicken rice", "chicken with vegetables", "grilled chicken" as 3 options — they all center on chicken).
-- Each meal option must represent a different cuisine style or food category where possible (e.g. one option could be traditional Saudi, one Mediterranean, one light/modern).
-- Morning snack and afternoon snack must differ: one fruit-based, one protein-based or grain-based, and the three options inside each snack must still be different foods.
-
-SPECIFICITY RULES:
-- Every food item name includes the food and its exact gram weight is in grams (for example cooked rice at 150 grams, not just rice).
-- Sauces, oils, and condiments are their own items, with grams or milliliters in the name and calories in the calories field (for example olive oil, 5 ml, 45 calories).
-- Drinks are their own items with a quantity (water, tea, and similar).
-- Write every name, title, preparation, and note in ${languageName}.
-- When naming meal options, NEVER label them by nationality or region. Do not write 'فطور سعودي' or 'وجبة مصرية' or 'طبق لبناني'. Just write the meal name directly, for example: 'فول بالزيت والليمون مع بيض مسلوق' instead of 'فطور سعودي تقليدي'. The meal name should describe what the food actually is.
-
-SAUDI CONTEXT:
-- Prioritize foods commonly available in Saudi supermarkets.
-- Include traditional Saudi dishes as at least one option per main meal (e.g. kabsa, shawarma, fool, tameez).
-- Avoid exotic ingredients that are hard to find locally.
-
-Be creative and surprising with your meal choices. Explore diverse cuisines including Saudi, Levantine, Egyptian, Mediterranean, and healthy international options.
-
-STRICT NO-REPETITION CHECK:
-- Before finalizing your response, review all meal options and confirm that no main protein, grain, or vegetable ingredient is repeated more than twice across all meals and options combined. If you find repetition, replace the repeated item with a different food.
-- Do NOT use standalone dashes (-- or ---) anywhere, and do not use em dashes.
-- No markdown, no headings inside strings, no extra keys.${
-    avoidedMeals.length
-      ? `
-
-CRITICAL ANTI-REPETITION RULE:
-The following meals and ingredients were suggested in previous sessions for this user.
-You are STRICTLY FORBIDDEN from suggesting any of these again:
-${avoidedMeals.join(", ")}
-If you accidentally include any of these, your response will be rejected.
-You must suggest completely new and different meals that this user has never received before.`
-      : ""
-  }`;
-
-  const content = await callOpenAI(
-    {
-      kind: "text",
-      temperature: 0.9,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: `${languageDirective(lang)}\nYou are Coach Nova, a certified nutritionist. You write detailed diet plans that can only fit the specific person described, including their allergies and conditions. Always respond with valid JSON only, no markdown, and never use standalone dashes.`,
-        },
-        { role: "user", content: userPrompt },
-      ],
-    },
-    requestOptions,
+  const pieces = await Promise.all(
+    DIET_MEAL_JOBS.map((job) =>
+      requestDietPiece(
+        dietMealPrompt({
+          job,
+          budgets,
+          languageName,
+          profileText,
+          allergyBlock,
+          avoidedMeals,
+        }),
+        lang,
+        requestOptions,
+        job,
+      ),
+    ),
   );
 
-  return normalizeDietPlan(parseJsonResponse(content, "diet plan"));
+  const meals = pieces
+    .flatMap((piece) => piece.meals)
+    .sort((a, b) => DIET_SLOT_ORDER.indexOf(a.slot) - DIET_SLOT_ORDER.indexOf(b.slot));
+  const guidance = pieces.find((piece) => piece.raw?.eatFreely || piece.raw?.avoid)?.raw || {};
+
+  return normalizeDietPlan({
+    mealsPerDay: meals.length,
+    meals,
+    ...totalsFromMeals(meals),
+    eatFreely: guidance.eatFreely,
+    limit: guidance.limit,
+    avoid: guidance.avoid,
+    weeklyTips: guidance.weeklyTips,
+    hydrationMl: waterMl,
+    hydrationNote: hydrationNoteFor(lang),
+    allergyNote: guidance.allergyNote,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

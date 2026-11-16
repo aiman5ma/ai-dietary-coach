@@ -17,7 +17,7 @@ const MAX_TEXT_CHARS = 20_000;
 const MAX_TOTAL_TEXT_CHARS = 60_000;
 const MAX_IMAGE_CHARS = 3_600_000;
 const MAX_BODY_BYTES = 4_500_000;
-const RATE_LIMIT = 60;
+const RATE_LIMIT = 200;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 
 const hitsByIp = new Map();
